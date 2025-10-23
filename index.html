@@ -56,7 +56,12 @@
                 try {
                     // 1. Inicializar Firebase
                     if (!firebaseConfig || !firebaseConfig.apiKey) throw new Error("firebaseConfig incompleta.");
-                    app = firebase.initializeApp(firebaseConfig);
+                    // Evitar re-inicializar si ya existe
+                    if (!firebase.apps.length) {
+                        app = firebase.initializeApp(firebaseConfig);
+                    } else {
+                        app = firebase.app(); // Obtener la app existente
+                    }
                     auth = firebase.auth(app);
                     db = firebase.firestore(app);
 
@@ -105,20 +110,21 @@
                     downloadBtn: document.getElementById('download-btn'),
                     summaryTitleInput: document.getElementById('summary-title-input'),
                     statusMessage: document.getElementById('status-message'),
+                    pdfPlaceholder: document.getElementById('pdf-placeholder'), // Añadido
                 };
                  // Asignar funcionalidad a botones de 'Volver' estáticos
                  assignStaticBackButtonListeners();
             }
 
             function assignStaticBackButtonListeners() {
-                const backButtons = document.querySelectorAll('button[onclick*="mode-selector"]');
+                // Botones 'Volver' en secciones de clase
+                const backButtons = document.querySelectorAll('#join-class-section button.hover\\:underline, #teacher-setup-section button.hover\\:underline, #activity-created-section button.hover\\:underline');
                 backButtons.forEach(button => {
-                    // Quitar el onclick inline y asignar listener
-                    button.removeAttribute('onclick');
+                    button.removeAttribute('onclick'); // Limpiar onclick inline si existe
                     button.addEventListener('click', showModeSelector);
                 });
                  // Botón volver/salir de la app principal
-                 const mainBackButton = document.querySelector('#main-app-content button[onclick*="location.reload"]');
+                 const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline');
                  if (mainBackButton) {
                      mainBackButton.removeAttribute('onclick');
                      mainBackButton.addEventListener('click', () => location.reload());
@@ -133,14 +139,20 @@
                 auth.onAuthStateChanged(async (user) => {
                     if (!user) {
                         try {
-                            await auth.signInAnonymously();
+                            // Solo intentar login anónimo si no hay ya un proceso en curso
+                            if (!auth.currentUser) {
+                                await auth.signInAnonymously();
+                            }
                         } catch(e) {
                             console.error("Error en autenticación anónima:", e);
                             handleAuthError(e);
                         }
                     } else {
                         userId = user.uid;
-                        await loadUserNickAndDecideView();
+                        // Solo cargar nick si aún no lo tenemos o si el ID ha cambiado (poco probable)
+                        if (!userDisplayName || userId !== user.uid) {
+                             await loadUserNickAndDecideView();
+                        }
                     }
                 });
             }
@@ -154,12 +166,17 @@
             }
 
             function showFatalError(message) {
-                 // Intentar ocultar todo lo demás por si acaso
-                 if (allDOMElements.loginOverlay) allDOMElements.loginOverlay.hidden = true;
-                 if (allDOMElements.modeSelector) allDOMElements.modeSelector.hidden = true;
-                 if (allDOMElements.mainAppContent) allDOMElements.mainAppContent.hidden = true;
-                 // Mostrar solo el error
-                 document.body.innerHTML = `<div class="text-center p-8 text-red-500">${message}</div>`;
+                 try {
+                     // Intentar ocultar todo lo demás por si acaso
+                     if (allDOMElements.loginOverlay) allDOMElements.loginOverlay.hidden = true;
+                     if (allDOMElements.modeSelector) allDOMElements.modeSelector.hidden = true;
+                     if (allDOMElements.mainAppContent) allDOMElements.mainAppContent.hidden = true;
+                     // Mostrar solo el error
+                     document.body.innerHTML = `<div class="text-center p-8 text-red-500">${message}</div>`;
+                 } catch (innerError) {
+                     // Fallback si allDOMElements aún no está listo
+                     document.body.innerHTML = `<div class="text-center p-8 text-red-500">${message}</div>`;
+                 }
             }
 
             // --- Funciones de Lógica de UI ---
@@ -177,7 +194,7 @@
                     }
                 } catch (e) {
                     console.error("Error cargando nick:", e);
-                    showNickPrompt();
+                    showNickPrompt(); // En caso de error, pedir nick
                 }
             }
 
@@ -186,12 +203,12 @@
                 allDOMElements.loginOverlay.hidden = false;
                 allDOMElements.modeSelector.hidden = true;
                 allDOMElements.mainAppContent.hidden = true;
-                allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit);
+                allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit); // Limpiar listener anterior
                 allDOMElements.loginBtn.addEventListener('click', handleNickSubmit);
             }
 
             async function handleNickSubmit() {
-                 if (!allDOMElements.nickInput || !allDOMElements.nickError) return;
+                 if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn) return;
                 const nick = allDOMElements.nickInput.value.trim();
                 if (nick === "") {
                     allDOMElements.nickError.hidden = false;
@@ -211,8 +228,11 @@
                     console.error("Error guardando el nick:", e);
                     alert("Hubo un error al guardar tu nick. Inténtalo de nuevo.");
                 } finally {
-                    allDOMElements.loginBtn.disabled = false;
-                    allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
+                    // Asegurar que el botón se restaura incluso si hay error
+                    if (allDOMElements.loginBtn) {
+                        allDOMElements.loginBtn.disabled = false;
+                        allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
+                    }
                 }
             }
 
@@ -228,6 +248,8 @@
                 allDOMElements.individualModeBtn.addEventListener('click', setupIndividualMode);
                 allDOMElements.classModeBtn.removeEventListener('click', showClassOptions);
                 allDOMElements.classModeBtn.addEventListener('click', showClassOptions);
+                // Ocultar mensaje de estado si estaba visible
+                if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
             }
 
             function setupIndividualMode() {
@@ -235,14 +257,13 @@
                 allDOMElements.modeSelector.hidden = true;
                 allDOMElements.mainAppContent.hidden = false;
                 allDOMElements.pdfUploadSection.hidden = false;
-                 allDOMElements.pdfPlaceholder.hidden = true; // Ocultar placeholder
+                allDOMElements.pdfPlaceholder.hidden = true;
                 allDOMElements.leaderboardSection.hidden = true;
 
-                // Resetear input de archivo y reasignar listener
-                const newPdfUpload = allDOMElements.pdfUpload.cloneNode(true);
-                allDOMElements.pdfUpload.parentNode.replaceChild(newPdfUpload, allDOMElements.pdfUpload);
-                allDOMElements.pdfUpload = newPdfUpload;
+                // Asegurar que el listener de pdfUpload está correctamente asignado
+                allDOMElements.pdfUpload.removeEventListener('change', handlePdfUpload); // Limpiar primero
                 allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload);
+                allDOMElements.pdfUpload.value = ''; // Resetear input
 
                 resetAppState();
                 listenForLeaderboardUpdates(null);
@@ -265,17 +286,18 @@
                 allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
                 allDOMElements.teacherPdfUpload.value = '';
 
-                // Resetear y reasignar listeners
-                const newTeacherPdfUpload = allDOMElements.teacherPdfUpload.cloneNode(true);
-                allDOMElements.teacherPdfUpload.parentNode.replaceChild(newTeacherPdfUpload, allDOMElements.teacherPdfUpload);
-                allDOMElements.teacherPdfUpload = newTeacherPdfUpload;
-                allDOMElements.teacherPdfUpload.addEventListener('change', () => {
-                     allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload.files.length;
-                });
+                // Asegurar listeners
+                allDOMElements.teacherPdfUpload.removeEventListener('change', handleTeacherPdfSelect);
+                allDOMElements.teacherPdfUpload.addEventListener('change', handleTeacherPdfSelect);
 
                 allDOMElements.createActivityBtn.removeEventListener('click', createClassActivity);
                 allDOMElements.createActivityBtn.addEventListener('click', createClassActivity);
             }
+             // Función separada para manejar la selección de PDF del profesor
+             function handleTeacherPdfSelect() {
+                 allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload.files.length;
+             }
+
 
             function showJoinClassSection() {
                 allDOMElements.modeSelector.hidden = true;
@@ -323,25 +345,56 @@
                     allDOMElements.activityCreatedSection.hidden = false;
                     showStatusMessage(`Actividad creada. Comparte el código: ${currentActivityId}`, 'green');
 
-                    // Añadir listener para copiar código al portapapeles
                     const codeDisplay = allDOMElements.activityCreatedSection.querySelector('.select-all');
                     if (codeDisplay) {
-                        codeDisplay.onclick = () => {
-                            navigator.clipboard.writeText(currentActivityId)
-                                .then(() => showStatusMessage('Código copiado al portapapeles', 'green', 2000))
-                                .catch(err => console.error('Error al copiar código:', err));
-                        };
+                        // Limpiar listener anterior si existe
+                        codeDisplay.onclick = null;
+                        codeDisplay.addEventListener('click', () => {
+                             try {
+                                 navigator.clipboard.writeText(currentActivityId)
+                                     .then(() => showStatusMessage('Código copiado al portapapeles', 'green', 2000))
+                                     .catch(err => {
+                                         console.error('Error al copiar código (navigator):', err);
+                                         // Fallback para entornos inseguros (http) o navegadores antiguos
+                                         fallbackCopyTextToClipboard(currentActivityId);
+                                     });
+                             } catch (err) {
+                                  console.error('Error al copiar código (general):', err);
+                                  fallbackCopyTextToClipboard(currentActivityId);
+                             }
+                        });
                     }
 
                 } catch (error) {
                     console.error("Error creando actividad:", error);
                     alert(`Error al crear la actividad: ${error.message}`);
                     showStatusMessage(`Error: ${error.message}`, 'red');
-                } finally {
-                     allDOMElements.createActivityBtn.disabled = false; // Re-habilitar en caso de error
-                     allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
+                    // Restaurar botón solo si hubo error
+                    allDOMElements.createActivityBtn.disabled = false;
+                    allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
                 }
+                // No restaurar botón si tuvo éxito, permanece en la pantalla de código
             }
+
+             // Fallback para copiar texto si navigator.clipboard no está disponible
+            function fallbackCopyTextToClipboard(text) {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed"; // Evitar scroll
+                textArea.style.left = "-9999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showStatusMessage('Código copiado (fallback)', 'green', 2000);
+                } catch (err) {
+                    console.error('Error al copiar código (fallback):', err);
+                    showStatusMessage('No se pudo copiar el código automáticamente', 'yellow', 3000);
+                }
+                document.body.removeChild(textArea);
+            }
+
 
             async function joinClassActivity() {
                 const code = allDOMElements.activityCodeInput.value.trim();
@@ -363,17 +416,19 @@
                     }
 
                     const activityData = doc.data();
+                    if (!activityData.sourceText || !activityData.fileName) {
+                         throw new Error("La actividad encontrada está incompleta.");
+                    }
                     currentActivityId = code;
 
                     allDOMElements.joinClassSection.hidden = true;
                     allDOMElements.modeSelector.hidden = true;
-                    await registerUserInLeaderboard(currentActivityId); // Esperar registro ANTES de mostrar UI
+                    // Registrar PRIMERO, y solo si tiene éxito, mostrar la UI
+                    await registerUserInLeaderboard(currentActivityId);
                     setupClassModeUI(activityData.sourceText, activityData.fileName);
-
 
                 } catch (error) {
                     console.error("Error uniéndose a actividad:", error);
-                    // alert(`Error al unirse: ${error.message}`); // Usar status message
                     showStatusMessage(`Error al unirse: ${error.message}`, 'red');
                     allDOMElements.joinActivityBtn.disabled = false;
                     allDOMElements.joinActivityBtn.textContent = 'Unirme a la Actividad';
@@ -383,40 +438,45 @@
              function setupClassModeUI(pdfText, pdfFileName) {
                 allDOMElements.mainAppContent.hidden = false;
                 allDOMElements.pdfUploadSection.hidden = true;
-                 allDOMElements.pdfPlaceholder.hidden = false; // Mostrar placeholder para alinear
+                allDOMElements.pdfPlaceholder.hidden = false;
                 allDOMElements.leaderboardSection.hidden = false;
-                resetAppState(); // Limpiar estado anterior
+                resetAppState();
 
                 currentPDFText = pdfText;
                 allDOMElements.fileNameDisplay.textContent = `Trabajando en: ${pdfFileName} (Actividad: ${currentActivityId})`;
                 allDOMElements.sourceTextDisplay.textContent = currentPDFText;
 
-                // Habilitar botones ahora que hay texto
                 allDOMElements.alternativeExplanationBtn.disabled = false;
-                // Los otros botones se habilitan al escribir resumen
-                 listenForLeaderboardUpdates(currentActivityId); // Escuchar leaderboard específico
+                // Asignar listeners de la app principal AHORA que es visible
+                assignMainAppListeners();
+                listenForLeaderboardUpdates(currentActivityId);
             }
+
+            function assignMainAppListeners() {
+                 allDOMElements.studentSummary.removeEventListener('input', updateWordCount);
+                 allDOMElements.studentSummary.addEventListener('input', updateWordCount);
+
+                 allDOMElements.alternativeExplanationBtn.removeEventListener('click', generateAlternativeExplanation);
+                 allDOMElements.alternativeExplanationBtn.addEventListener('click', generateAlternativeExplanation);
+
+                 allDOMElements.geminiEvaluateBtn.removeEventListener('click', evaluateReasoning);
+                 allDOMElements.geminiEvaluateBtn.addEventListener('click', evaluateReasoning);
+
+                 allDOMElements.downloadBtn.removeEventListener('click', downloadSummaries);
+                 allDOMElements.downloadBtn.addEventListener('click', downloadSummaries);
+            }
+
 
             function showStatusMessage(message, color = 'gray', duration = 0) {
                 if (!allDOMElements.statusMessage) return;
                 allDOMElements.statusMessage.textContent = message;
-                // Clases de Tailwind para colores
-                const colorClasses = {
-                    red: 'text-red-600',
-                    green: 'text-green-600',
-                    blue: 'text-blue-600',
-                    yellow: 'text-yellow-600',
-                    gray: 'text-gray-600'
-                };
-                // Quitar clases de color anteriores y añadir la nueva
-                allDOMElements.statusMessage.classList.remove('text-red-600', 'text-green-600', 'text-blue-600', 'text-yellow-600', 'text-gray-600');
-                allDOMElements.statusMessage.classList.add(colorClasses[color] || colorClasses.gray);
+                const colorClasses = { red: 'text-red-600', green: 'text-green-600', blue: 'text-blue-600', yellow: 'text-yellow-600', gray: 'text-gray-600' };
+                allDOMElements.statusMessage.className = `mt-6 text-sm ${colorClasses[color] || colorClasses.gray}`; // Asegurar margen y tamaño
                 allDOMElements.statusMessage.hidden = false;
 
-                // Ocultar después de una duración si se especifica
                 if (duration > 0) {
                     setTimeout(() => {
-                        allDOMElements.statusMessage.hidden = true;
+                        if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
                     }, duration);
                 }
             }
@@ -434,23 +494,32 @@
                             let fullText = "";
                             const pagePromises = [];
                             for (let i = 1; i <= pdf.numPages; i++) {
-                                // Procesar páginas en paralelo para acelerar
                                 pagePromises.push(
                                     pdf.getPage(i).then(page => page.getTextContent())
+                                    .catch(pageError => { // Capturar error por página
+                                        console.warn(`Error procesando página ${i}:`, pageError);
+                                        return { items: [{ str: ` [Error página ${i}] ` }] }; // Devolver objeto simulado
+                                    })
                                 );
                             }
-                            const allTextContents = await Promise.all(pagePromises);
-                            allTextContents.forEach(textContent => {
-                                textContent.items.forEach(item => {
-                                    fullText += item.str + " ";
-                                });
-                                fullText += "\n\n"; // Separador entre páginas
+                            // Usar Promise.allSettled para continuar incluso si una página falla
+                            const results = await Promise.allSettled(pagePromises);
+                            results.forEach(result => {
+                                if (result.status === 'fulfilled') {
+                                    result.value.items.forEach(item => {
+                                        fullText += item.str + " ";
+                                    });
+                                } else {
+                                    // Ya logueamos el error arriba, solo añadir marcador
+                                    fullText += " [Página no procesada] ";
+                                }
+                                fullText += "\n\n";
                             });
 
                             resolve(fullText.trim());
                         } catch (error) {
                             console.error('Error general al cargar PDF:', error);
-                            reject(new Error(`No se pudo cargar el PDF. ¿Está dañado o protegido? Detalles: ${error.message}`));
+                            reject(new Error(`No se pudo cargar el PDF. ¿Está dañado o protegido? ${error.message}`));
                         }
                     };
                      reader.onerror = (error) => {
@@ -465,22 +534,33 @@
             async function handlePdfUpload(event) {
                 const file = event.target.files[0];
                 if (!file || file.type !== 'application/pdf') {
-                    // alert('Por favor, selecciona un archivo PDF.'); // Usar status message
                     showStatusMessage("Por favor, selecciona un archivo PDF válido.", 'yellow', 3000);
-                    event.target.value = ''; // Resetear input
+                    event.target.value = '';
                     return;
                 }
 
                 allDOMElements.fileNameDisplay.textContent = `Cargando: ${file.name}...`;
-                resetAppState();
+                // Resetear solo la parte del contenido, no el modo entero
+                 currentPDFText = "";
+                 allDOMElements.studentSummary.value = "";
+                 allDOMElements.geminiFeedbackArea.hidden = true;
+                 allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
+                 allDOMElements.alternativeExplanationBtn.disabled = true;
+                 allDOMElements.geminiEvaluateBtn.disabled = true;
+                 allDOMElements.downloadBtn.disabled = true;
+                 allDOMElements.wordCount.textContent = '0';
+                 allDOMElements.summaryTitleInput.value = "";
 
                 try {
                     currentPDFText = await extractPdfText(file);
                     allDOMElements.sourceTextDisplay.textContent = currentPDFText;
                     allDOMElements.fileNameDisplay.textContent = `Archivo cargado: ${file.name}`;
                     allDOMElements.alternativeExplanationBtn.disabled = false;
+                     // Reasignar listeners principales por si acaso
+                     assignMainAppListeners();
+
                 } catch (error) {
-                     console.error('Error procesando el PDF:', error);
+                     console.error('Error procesando el PDF en modo individual:', error);
                      allDOMElements.sourceTextDisplay.textContent = `Error al procesar el PDF: ${error.message}`;
                      allDOMElements.fileNameDisplay.textContent = 'Error al cargar';
                      showStatusMessage(`Error al procesar el PDF: ${error.message}`, 'red');
@@ -492,27 +572,38 @@
                  if (allDOMElements.studentSummary) allDOMElements.studentSummary.value = "";
                  if (allDOMElements.geminiFeedbackArea) allDOMElements.geminiFeedbackArea.hidden = true;
                  if (allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
-                 if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = currentActivityId ? currentPDFText : 'Selecciona un modo y carga un PDF para empezar.';
-                 if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = currentActivityId ? allDOMElements.fileNameDisplay.textContent : 'Ningún archivo seleccionado.';
+                 if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = 'Selecciona un modo y carga un PDF para empezar.';
+                 if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo seleccionado.';
                  if (allDOMElements.alternativeExplanationBtn) allDOMElements.alternativeExplanationBtn.disabled = true;
                  if (allDOMElements.geminiEvaluateBtn) allDOMElements.geminiEvaluateBtn.disabled = true;
                  if (allDOMElements.downloadBtn) allDOMElements.downloadBtn.disabled = true;
                  if (allDOMElements.wordCount) allDOMElements.wordCount.textContent = '0';
                  if (allDOMElements.summaryTitleInput) allDOMElements.summaryTitleInput.value = "";
-                 // Detener listener anterior si existe
+
+                 // Detener listener de Firestore si estaba activo
                  if (firestoreListenerUnsubscribe) {
                     firestoreListenerUnsubscribe();
                     firestoreListenerUnsubscribe = null;
+                    console.log("Firestore listener stopped during reset.");
                  }
             }
 
+
             function updateWordCount() {
+                // Verificar que los elementos existen antes de usarlos
+                if (!allDOMElements.studentSummary || !allDOMElements.wordCount || !allDOMElements.geminiEvaluateBtn || !allDOMElements.downloadBtn) {
+                     console.warn("updateWordCount llamado antes de que la UI esté lista.");
+                     return;
+                }
                 const text = allDOMElements.studentSummary.value.trim();
                 const words = text === '' ? 0 : text.split(/\s+/).length;
                 allDOMElements.wordCount.textContent = words;
-                allDOMElements.geminiEvaluateBtn.disabled = (text === '' || currentPDFText === '');
+                // Habilitar botones solo si hay texto Y contenido de PDF cargado
+                const hasPDFContent = currentPDFText !== "";
+                allDOMElements.geminiEvaluateBtn.disabled = (text === '' || !hasPDFContent);
                 allDOMElements.downloadBtn.disabled = (text === '');
             }
+
 
             function listenForLeaderboardUpdates(activityId = null) {
                 if (firestoreListenerUnsubscribe) {
@@ -521,9 +612,12 @@
                     console.log("Previous listener stopped.");
                 }
 
-                if (!db) { console.error("Firestore DB not initialized"); return; }
-                if (!allDOMElements.leaderboardSection) { console.error("Leaderboard section not found"); return;}
-
+                if (!db || !allDOMElements.leaderboardSection || !allDOMElements.leaderboard) {
+                     console.error("Firestore DB or Leaderboard elements not initialized");
+                     // Ocultar sección si no se puede inicializar
+                     if (allDOMElements.leaderboardSection) allDOMElements.leaderboardSection.hidden = true;
+                     return;
+                 }
 
                 if (!activityId) {
                     allDOMElements.leaderboardSection.hidden = true;
@@ -543,11 +637,8 @@
                     const users = [];
                     snapshot.forEach(doc => {
                         const data = doc.data();
-                        if (data.name) {
-                            users.push({ id: doc.id, name: data.name });
-                        } else {
-                            console.warn("Doc in leaderboard missing 'name':", doc.id);
-                        }
+                        if (data.name) { users.push({ id: doc.id, name: data.name }); }
+                        else { console.warn("Doc in leaderboard missing 'name':", doc.id); }
                     });
 
                     allDOMElements.leaderboard.innerHTML = '';
@@ -565,31 +656,34 @@
                         const listItem = document.createElement('li');
                         listItem.className = `text-sm truncate ${isCurrentUser ? 'font-bold text-blue-600' : 'text-gray-700'}`;
                         listItem.textContent = isCurrentUser ? `Tú (${displayName})` : displayName;
-                        listItem.title = displayName; // Tooltip for long names
+                        listItem.title = displayName;
                         listElement.appendChild(listItem);
                     });
                 }, (error) => {
                     console.error(`Error escuchando leaderboard (${collectionPath}):`, error);
                     let errorMsg = "Error al cargar el progreso.";
-                    if (error.code === 'permission-denied') {
-                         console.error("PERMISSION DENIED on listener. Check Firestore rules for path:", collectionPath);
-                         errorMsg = "Error de permisos. Revisa las reglas de Firestore.";
-                    } else if (error.code === 'unimplemented' || error.message.includes('offline')) {
-                         console.error("Firestore offline or network issue.");
-                         errorMsg = "Problema de red. Reintentando...";
-                         // Podríamos intentar re-attach el listener aquí con backoff
-                    }
+                    if (error.code === 'permission-denied') { errorMsg = "Error de permisos. Revisa las reglas."; }
+                    else if (error.code === 'unimplemented' || error.message.includes('offline')) { errorMsg = "Problema de red. Reintentando..."; }
                      allDOMElements.leaderboard.innerHTML = `<p class="text-red-500 text-sm">${errorMsg}</p>`;
+                     // Detener listener si el error es grave (ej: permisos)
+                     if (error.code === 'permission-denied' && firestoreListenerUnsubscribe) {
+                         firestoreListenerUnsubscribe();
+                         firestoreListenerUnsubscribe = null;
+                         console.warn("Listener detenido por error de permisos.");
+                     }
                 });
             }
 
 
             async function registerUserInLeaderboard(activityId = null) {
-                 if (!userId || !db || !userDisplayName || !activityId) return Promise.resolve(); // Resolver promesa si no aplica
+                 // Añadir verificación extra de db y userId
+                 if (!userId || !db || !userDisplayName || !activityId) {
+                     console.warn("Faltan datos para registrar en leaderboard", {userId, db, userDisplayName, activityId});
+                     return Promise.reject(new Error("Faltan datos para registrarse.")); // Rechazar promesa
+                 }
                  const userProgressRef = db.doc(`activities/${activityId}/progress/${userId}`);
                  try {
                      console.log(`Registering user ${userDisplayName} (${userId}) in activity ${activityId}`);
-                     // Usar await para asegurar que se completa antes de continuar (si es necesario)
                      await userProgressRef.set({
                          name: userDisplayName,
                          lastActive: firebase.firestore.FieldValue.serverTimestamp()
@@ -597,7 +691,6 @@
                      console.log("User registered successfully.");
                  } catch(e) {
                     console.error("Error registrando en leaderboard:", e);
-                    // Lanzar error para que la función que llama (joinClassActivity) lo maneje
                     throw new Error(`No se pudo registrar en la actividad: ${e.message}`);
                  }
             }
@@ -611,7 +704,7 @@
                      button.innerHTML = '<div class="loader inline-block mr-2" style="width: 1em; height: 1em; border-width: 2px;"></div>Procesando...';
                  }
 
-                let resultText = `<span class="text-red-600">Error desconocido al contactar con la IA.</span>`; // Default error
+                let resultText = `<span class="text-red-600">Error desconocido al contactar con la IA.</span>`;
 
                 try {
                     const API_KEY = "";
@@ -646,16 +739,27 @@
                         if (result.promptFeedback && result.promptFeedback.blockReason) { throw new Error(`Contenido bloqueado por la API: ${result.promptFeedback.blockReason}`); }
                         else { console.error("Respuesta API inesperada:", result); throw new Error("Respuesta inválida de la API."); }
                     }
-                    if (candidate.finishReason && candidate.finishReason !== "STOP") {
-                         if (candidate.finishReason === "MAX_TOKENS" && candidate.content?.parts?.[0]?.text) { console.warn("API finishReason: MAX_TOKENS."); }
-                         else { throw new Error(`API stop reason: ${candidate.finishReason}`); }
+                    if (candidate.finishReason && !["STOP", "MAX_TOKENS"].includes(candidate.finishReason) ) {
+                         // Aceptar STOP y MAX_TOKENS (si hay contenido)
+                         if (candidate.finishReason === "MAX_TOKENS" && candidate.content?.parts?.[0]?.text) {
+                            console.warn("API finishReason: MAX_TOKENS.");
+                         } else {
+                            throw new Error(`API stop reason: ${candidate.finishReason}`);
+                         }
                     }
+
 
                     if (candidate?.content?.parts?.[0]?.text) {
                         resultText = candidate.content.parts[0].text
                              .replace(/(\r\n|\r|\n){2,}/g, '\n\n')
                              .replace(/\n/g, '<br>');
-                    } else { throw new Error("No se recibió texto válido de la API."); }
+                    } else if (candidate.finishReason === "MAX_TOKENS") {
+                         // Si MAX_TOKENS y no hay texto, es un error real
+                         throw new Error("API stop reason: MAX_TOKENS sin contenido.");
+                    }
+                     else {
+                        throw new Error("No se recibió texto válido de la API.");
+                    }
 
                 } catch (error) {
                     console.error("Error llamando a la API de Gemini:", error);
@@ -663,13 +767,11 @@
                 } finally {
                     if (button) {
                         button.disabled = false;
-                        // Restaurar contenido original
-                        button.innerHTML = originalHTML; // Intentar restaurar HTML completo
-                         // Si falla restaurar HTML (raro), intentar restaurar texto
+                        button.innerHTML = originalHTML;
                          if (button.innerHTML === '') button.textContent = originalTextContent;
                     }
                 }
-                return resultText; // Devolver siempre el texto resultado (o el error)
+                return resultText;
             }
 
 
@@ -678,14 +780,12 @@
                  const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText;
                  const prompt = `Eres un profesor de apoyo para alumnos de Bachillerato. Re-explica el siguiente texto extraído de un PDF usando un lenguaje más sencillo, claro y, si es posible, alguna analogía. Mantén el tono amigable y educativo. TEXTO A EXPLICAR: "${textSnippet}"`;
 
-                 // Mostrar UI de carga antes de llamar a la API
                  allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Generando Explicación Alternativa...</h4><div class="loader"></div>`;
                  allDOMElements.alternativeExplanationDisplay.classList.remove('hidden');
                  allDOMElements.sourceTextDisplay.classList.add('hidden');
 
-                 const explanation = await callGeminiAPI(prompt, allDOMElements.alternativeExplanationBtn); // Pasar el botón
+                 const explanation = await callGeminiAPI(prompt, allDOMElements.alternativeExplanationBtn);
 
-                 // Actualizar UI con el resultado (o error)
                  allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Explicación Alternativa:</h4><div>${explanation}</div><hr class="my-4"><button id="close-alt-explanation" class="text-sm text-blue-600 hover:underline">Cerrar</button>`;
 
                  const closeBtn = document.getElementById('close-alt-explanation');
@@ -711,13 +811,11 @@
 
                 Evalúa en un párrafo corto si el resumen capta las ideas principales del extracto y conecta bien las ideas. Dale feedback constructivo y positivo sobre cómo mejorar. Anímale. No des nota. Empieza saludando de forma cercana.`;
 
-                // Mostrar UI de carga antes de llamar a la API
                 allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Generando Valoración con IA...</h3><div class="loader"></div>`;
                 allDOMElements.geminiFeedbackArea.hidden = false;
 
-                const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn); // Pasar el botón
+                const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn);
 
-                // Actualizar UI con el resultado (o error)
                 allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Valoración con IA</h3><div class="p-4 bg-green-50 border border-green-200 rounded-lg prose prose-custom text-gray-700">${evaluation}</div>`;
             }
 
@@ -731,7 +829,8 @@
                      return;
                  }
                  let fileContent = `Resumen de: ${title}\n`;
-                 fileContent += `Realizado por: ${userDisplayName}\n\n`; // Usar el nick guardado
+                 // Asegurarse de que userDisplayName está definido
+                 fileContent += `Realizado por: ${userDisplayName || 'Usuario desconocido'}\n\n`;
                  fileContent += `========================================\n`;
                  fileContent += summary;
 
@@ -740,7 +839,7 @@
                      const link = document.createElement('a');
                      link.href = URL.createObjectURL(blob);
                      const safeFileName = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                     const safeDisplayName = userDisplayName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                     const safeDisplayName = (userDisplayName || 'usuario').replace(/[^a-z0-9]/gi, '_').toLowerCase();
                      link.download = `resumen_${safeFileName.substring(0,20)}_${safeDisplayName.substring(0,10)}.txt`;
 
                      document.body.appendChild(link);
@@ -753,7 +852,11 @@
                      // Guardar resumen en Firestore si es modo clase
                      if (currentActivityId && userId && db) {
                          const summaryRef = db.doc(`activities/${currentActivityId}/progress/${userId}`);
-                         summaryRef.set({ summary: summary }, { merge: true })
+                         // Guardar también el título del resumen si se proporcionó
+                         summaryRef.set({
+                            summary: summary,
+                            summaryTitle: title !== "Resumen del PDF" ? title : null // Guardar solo si no es el default
+                         }, { merge: true })
                              .then(() => console.log("Resumen guardado en Firestore."))
                              .catch(e => console.error("Error guardando resumen en Firestore:", e));
                      }
