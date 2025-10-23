@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Herramienta de Resumen IA (Profesor/Alumno)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Incluir la librería pdf.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script>
+        // Configurar workerSrc ANTES de cargar Firebase
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
+        .prose-custom p, .prose-custom li { margin-bottom: 1em; }
+        .prose-custom h1, .prose-custom h2, .prose-custom h3, .prose-custom h4 { margin-bottom: 0.5em; }
+        .feedback-card { transition: all 0.5s ease-in-out; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        [hidden] { display: none !important; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 999; }
+    </style>
+
+    <!-- Cargamos Firebase con el método "clásico" (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        // --- INICIO: ENVOLTURA DOMCONTENTLOADED ---
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- TU CONFIGURACIÓN DE FIREBASE (YA INCLUIDA) ---
+            const firebaseConfig = {
+                apiKey: "AIzaSyBiaYwiczL2M-1jr6G7DAAhRTyF1SXJKRI",
+                authDomain: "resumencomputacionfisica.firebaseapp.com",
+                projectId: "resumencomputacionfisica",
+                storageBucket: "resumencomputacionfisica.firebasestorage.app",
+                messagingSenderId: "411512056489",
+                appId: "1:411512056489:web:75fd8e99317937c38297b8"
+            };
+            // -----------------------------------------------------
+
+            let app, auth, db, userId, userDisplayName;
+            let currentPDFText = "";
+            let currentActivityId = null;
+            let allDOMElements = {}; // Objeto para guardar referencias a elementos del DOM
+            let firestoreListenerUnsubscribe = null;
+
+            // --- INICIALIZACIÓN SECUENCIAL Y ROBUSTA ---
+            function initializeApp() {
+                try {
+                    // 1. Inicializar Firebase
+                    if (!firebaseConfig || !firebaseConfig.apiKey) throw new Error("firebaseConfig incompleta.");
+                    app = firebase.initializeApp(firebaseConfig);
+                    auth = firebase.auth(app);
+                    db = firebase.firestore(app);
+
+                    // 2. Asignar elementos del DOM (SOLO DESPUÉS de inicializar Firebase)
+                    assignDOMElements();
+
+                    // 3. Configurar listener de autenticación (SOLO DESPUÉS de tener auth y elementos DOM)
+                    setupAuthListener();
+
+                } catch (e) {
+                    console.error("Error crítico durante la inicialización:", e);
+                    showFatalError(`Error fatal durante la inicialización: ${e.message}. Revisa la \`firebaseConfig\` y la conexión a Firebase.`);
+                }
+            }
+
+            function assignDOMElements() {
+                allDOMElements = {
+                    loginOverlay: document.getElementById('login-overlay'),
+                    loginBtn: document.getElementById('login-btn'),
+                    nickInput: document.getElementById('nick-input'),
+                    nickError: document.getElementById('nick-error'),
+                    modeSelector: document.getElementById('mode-selector'),
+                    individualModeBtn: document.getElementById('individual-mode-btn'),
+                    classModeBtn: document.getElementById('class-mode-btn'),
+                    joinClassSection: document.getElementById('join-class-section'),
+                    activityCodeInput: document.getElementById('activity-code-input'),
+                    joinActivityBtn: document.getElementById('join-activity-btn'),
+                    teacherSetupSection: document.getElementById('teacher-setup-section'),
+                    teacherPdfUpload: document.getElementById('teacher-pdf-upload'),
+                    createActivityBtn: document.getElementById('create-activity-btn'),
+                    activityCreatedSection: document.getElementById('activity-created-section'),
+                    activityCodeDisplay: document.getElementById('activity-code-display'),
+                    mainAppContent: document.getElementById('main-app-content'),
+                    leaderboardSection: document.getElementById('leaderboard-section'),
+                    leaderboard: document.getElementById('leaderboard'),
+                    pdfUploadSection: document.getElementById('pdf-upload-section'),
+                    pdfUpload: document.getElementById('pdf-upload'),
+                    fileNameDisplay: document.getElementById('file-name'),
+                    sourceTextDisplay: document.getElementById('source-text-display'),
+                    textContainer: document.getElementById('source-text-container'),
+                    alternativeExplanationBtn: document.getElementById('alternative-explanation-btn'),
+                    studentSummary: document.getElementById('student-summary'),
+                    wordCount: document.getElementById('word-count'),
+                    geminiEvaluateBtn: document.getElementById('gemini-evaluate-btn'),
+                    geminiFeedbackArea: document.getElementById('gemini-feedback-area'),
+                    downloadBtn: document.getElementById('download-btn'),
+                    summaryTitleInput: document.getElementById('summary-title-input'),
+                    statusMessage: document.getElementById('status-message'),
+                };
+                 // Asignar funcionalidad a botones de 'Volver' estáticos
+                 assignStaticBackButtonListeners();
+            }
+
+            function assignStaticBackButtonListeners() {
+                const backButtons = document.querySelectorAll('button[onclick*="mode-selector"]');
+                backButtons.forEach(button => {
+                    // Quitar el onclick inline y asignar listener
+                    button.removeAttribute('onclick');
+                    button.addEventListener('click', showModeSelector);
+                });
+                 // Botón volver/salir de la app principal
+                 const mainBackButton = document.querySelector('#main-app-content button[onclick*="location.reload"]');
+                 if (mainBackButton) {
+                     mainBackButton.removeAttribute('onclick');
+                     mainBackButton.addEventListener('click', () => location.reload());
+                 }
+            }
+
+            function setupAuthListener() {
+                if (!auth) {
+                    showFatalError("Servicio de autenticación no disponible.");
+                    return;
+                }
+                auth.onAuthStateChanged(async (user) => {
+                    if (!user) {
+                        try {
+                            await auth.signInAnonymously();
+                        } catch(e) {
+                            console.error("Error en autenticación anónima:", e);
+                            handleAuthError(e);
+                        }
+                    } else {
+                        userId = user.uid;
+                        await loadUserNickAndDecideView();
+                    }
+                });
+            }
+
+            function handleAuthError(e) {
+                 if (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed') {
+                    showFatalError(`<b>Error Fatal de Configuración:</b> El servicio de 'Autenticación Anónima' no está habilitado en tu proyecto de Firebase.<br><br>Ve a Firebase -> Authentication -> Sign-in method -> y habilita 'Anónimo'.`);
+                } else {
+                    showFatalError(`Error fatal: No se pudo conectar con el servicio de autenticación. ${e.message}`);
+                }
+            }
+
+            function showFatalError(message) {
+                 // Intentar ocultar todo lo demás por si acaso
+                 if (allDOMElements.loginOverlay) allDOMElements.loginOverlay.hidden = true;
+                 if (allDOMElements.modeSelector) allDOMElements.modeSelector.hidden = true;
+                 if (allDOMElements.mainAppContent) allDOMElements.mainAppContent.hidden = true;
+                 // Mostrar solo el error
+                 document.body.innerHTML = `<div class="text-center p-8 text-red-500">${message}</div>`;
+            }
+
+            // --- Funciones de Lógica de UI ---
+
+            async function loadUserNickAndDecideView() {
+                if (!userId || !db || !allDOMElements.loginOverlay) return; // Asegurar que elementos existen
+                const userRef = db.doc(`users/${userId}`);
+                try {
+                    const doc = await userRef.get();
+                    if (doc.exists && doc.data().name) {
+                        userDisplayName = doc.data().name;
+                        showModeSelector();
+                    } else {
+                        showNickPrompt();
+                    }
+                } catch (e) {
+                    console.error("Error cargando nick:", e);
+                    showNickPrompt();
+                }
+            }
+
+            function showNickPrompt() {
+                if (!allDOMElements.loginOverlay) return;
+                allDOMElements.loginOverlay.hidden = false;
+                allDOMElements.modeSelector.hidden = true;
+                allDOMElements.mainAppContent.hidden = true;
+                allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit);
+                allDOMElements.loginBtn.addEventListener('click', handleNickSubmit);
+            }
+
+            async function handleNickSubmit() {
+                 if (!allDOMElements.nickInput || !allDOMElements.nickError) return;
+                const nick = allDOMElements.nickInput.value.trim();
+                if (nick === "") {
+                    allDOMElements.nickError.hidden = false;
+                    return;
+                }
+                allDOMElements.nickError.hidden = true;
+                userDisplayName = nick;
+
+                const userRef = db.doc(`users/${userId}`);
+                try {
+                    allDOMElements.loginBtn.disabled = true;
+                    allDOMElements.loginBtn.innerHTML = '<div class="loader inline-block"></div> Guardando...';
+                    await userRef.set({ name: userDisplayName }, { merge: true });
+                    allDOMElements.loginOverlay.hidden = true;
+                    showModeSelector();
+                } catch (e) {
+                    console.error("Error guardando el nick:", e);
+                    alert("Hubo un error al guardar tu nick. Inténtalo de nuevo.");
+                } finally {
+                    allDOMElements.loginBtn.disabled = false;
+                    allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
+                }
+            }
+
+            function showModeSelector() {
+                if (!allDOMElements.modeSelector) return;
+                allDOMElements.modeSelector.hidden = false;
+                allDOMElements.joinClassSection.hidden = true;
+                allDOMElements.teacherSetupSection.hidden = true;
+                allDOMElements.activityCreatedSection.hidden = true;
+                allDOMElements.mainAppContent.hidden = true;
+                // Asegurar listeners del selector
+                allDOMElements.individualModeBtn.removeEventListener('click', setupIndividualMode);
+                allDOMElements.individualModeBtn.addEventListener('click', setupIndividualMode);
+                allDOMElements.classModeBtn.removeEventListener('click', showClassOptions);
+                allDOMElements.classModeBtn.addEventListener('click', showClassOptions);
+            }
+
+            function setupIndividualMode() {
+                currentActivityId = null;
+                allDOMElements.modeSelector.hidden = true;
+                allDOMElements.mainAppContent.hidden = false;
+                allDOMElements.pdfUploadSection.hidden = false;
+                 allDOMElements.pdfPlaceholder.hidden = true; // Ocultar placeholder
+                allDOMElements.leaderboardSection.hidden = true;
+
+                // Resetear input de archivo y reasignar listener
+                const newPdfUpload = allDOMElements.pdfUpload.cloneNode(true);
+                allDOMElements.pdfUpload.parentNode.replaceChild(newPdfUpload, allDOMElements.pdfUpload);
+                allDOMElements.pdfUpload = newPdfUpload;
+                allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload);
+
+                resetAppState();
+                listenForLeaderboardUpdates(null);
+            }
+
+            function showClassOptions() {
+                 const isTeacher = confirm("¿Eres el profesor y quieres crear una nueva actividad de clase?");
+                 if (isTeacher) {
+                     setupTeacherMode();
+                 } else {
+                     showJoinClassSection();
+                 }
+            }
+
+            function setupTeacherMode() {
+                allDOMElements.modeSelector.hidden = true;
+                allDOMElements.joinClassSection.hidden = true;
+                allDOMElements.teacherSetupSection.hidden = false;
+                allDOMElements.createActivityBtn.disabled = true;
+                allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
+                allDOMElements.teacherPdfUpload.value = '';
+
+                // Resetear y reasignar listeners
+                const newTeacherPdfUpload = allDOMElements.teacherPdfUpload.cloneNode(true);
+                allDOMElements.teacherPdfUpload.parentNode.replaceChild(newTeacherPdfUpload, allDOMElements.teacherPdfUpload);
+                allDOMElements.teacherPdfUpload = newTeacherPdfUpload;
+                allDOMElements.teacherPdfUpload.addEventListener('change', () => {
+                     allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload.files.length;
+                });
+
+                allDOMElements.createActivityBtn.removeEventListener('click', createClassActivity);
+                allDOMElements.createActivityBtn.addEventListener('click', createClassActivity);
+            }
+
+            function showJoinClassSection() {
+                allDOMElements.modeSelector.hidden = true;
+                allDOMElements.teacherSetupSection.hidden = true;
+                allDOMElements.joinClassSection.hidden = false;
+                allDOMElements.activityCodeInput.value = '';
+                allDOMElements.joinActivityBtn.disabled = false;
+                allDOMElements.joinActivityBtn.textContent = 'Unirme a la Actividad';
+                allDOMElements.statusMessage.hidden = true;
+
+                allDOMElements.joinActivityBtn.removeEventListener('click', joinClassActivity);
+                allDOMElements.joinActivityBtn.addEventListener('click', joinClassActivity);
+            }
+
+            async function createClassActivity() {
+                const file = allDOMElements.teacherPdfUpload.files[0];
+                if (!file || file.type !== 'application/pdf') {
+                    alert('Por favor, selecciona un archivo PDF válido.');
+                    return;
+                }
+
+                allDOMElements.createActivityBtn.disabled = true;
+                allDOMElements.createActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Creando...';
+                showStatusMessage('Procesando PDF y creando actividad...', 'blue');
+
+                try {
+                    const textContent = await extractPdfText(file);
+                    if (new Blob([textContent]).size > 950000) {
+                         throw new Error("El texto extraído del PDF es demasiado grande (> 1MB). Usa un PDF más corto.");
+                    }
+
+                    const activityRef = db.collection('activities').doc();
+                    currentActivityId = activityRef.id;
+
+                    await activityRef.set({
+                        ownerId: userId,
+                        ownerName: userDisplayName,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        sourceText: textContent,
+                        fileName: file.name
+                    });
+
+                    allDOMElements.teacherSetupSection.hidden = true;
+                    allDOMElements.activityCodeDisplay.textContent = currentActivityId;
+                    allDOMElements.activityCreatedSection.hidden = false;
+                    showStatusMessage(`Actividad creada. Comparte el código: ${currentActivityId}`, 'green');
+
+                    // Añadir listener para copiar código al portapapeles
+                    const codeDisplay = allDOMElements.activityCreatedSection.querySelector('.select-all');
+                    if (codeDisplay) {
+                        codeDisplay.onclick = () => {
+                            navigator.clipboard.writeText(currentActivityId)
+                                .then(() => showStatusMessage('Código copiado al portapapeles', 'green', 2000))
+                                .catch(err => console.error('Error al copiar código:', err));
+                        };
+                    }
+
+                } catch (error) {
+                    console.error("Error creando actividad:", error);
+                    alert(`Error al crear la actividad: ${error.message}`);
+                    showStatusMessage(`Error: ${error.message}`, 'red');
+                } finally {
+                     allDOMElements.createActivityBtn.disabled = false; // Re-habilitar en caso de error
+                     allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
+                }
+            }
+
+            async function joinClassActivity() {
+                const code = allDOMElements.activityCodeInput.value.trim();
+                if (!code) {
+                    alert("Por favor, introduce el código de la actividad.");
+                    return;
+                }
+
+                allDOMElements.joinActivityBtn.disabled = true;
+                allDOMElements.joinActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Uniéndose...';
+                showStatusMessage('Buscando actividad...', 'blue');
+
+                try {
+                    const activityRef = db.doc(`activities/${code}`);
+                    const doc = await activityRef.get();
+
+                    if (!doc.exists) {
+                        throw new Error("Código de actividad no encontrado.");
+                    }
+
+                    const activityData = doc.data();
+                    currentActivityId = code;
+
+                    allDOMElements.joinClassSection.hidden = true;
+                    allDOMElements.modeSelector.hidden = true;
+                    await registerUserInLeaderboard(currentActivityId); // Esperar registro ANTES de mostrar UI
+                    setupClassModeUI(activityData.sourceText, activityData.fileName);
+
+
+                } catch (error) {
+                    console.error("Error uniéndose a actividad:", error);
+                    // alert(`Error al unirse: ${error.message}`); // Usar status message
+                    showStatusMessage(`Error al unirse: ${error.message}`, 'red');
+                    allDOMElements.joinActivityBtn.disabled = false;
+                    allDOMElements.joinActivityBtn.textContent = 'Unirme a la Actividad';
+                }
+            }
+
+             function setupClassModeUI(pdfText, pdfFileName) {
+                allDOMElements.mainAppContent.hidden = false;
+                allDOMElements.pdfUploadSection.hidden = true;
+                 allDOMElements.pdfPlaceholder.hidden = false; // Mostrar placeholder para alinear
+                allDOMElements.leaderboardSection.hidden = false;
+                resetAppState(); // Limpiar estado anterior
+
+                currentPDFText = pdfText;
+                allDOMElements.fileNameDisplay.textContent = `Trabajando en: ${pdfFileName} (Actividad: ${currentActivityId})`;
+                allDOMElements.sourceTextDisplay.textContent = currentPDFText;
+
+                // Habilitar botones ahora que hay texto
+                allDOMElements.alternativeExplanationBtn.disabled = false;
+                // Los otros botones se habilitan al escribir resumen
+                 listenForLeaderboardUpdates(currentActivityId); // Escuchar leaderboard específico
+            }
+
+            function showStatusMessage(message, color = 'gray', duration = 0) {
+                if (!allDOMElements.statusMessage) return;
+                allDOMElements.statusMessage.textContent = message;
+                // Clases de Tailwind para colores
+                const colorClasses = {
+                    red: 'text-red-600',
+                    green: 'text-green-600',
+                    blue: 'text-blue-600',
+                    yellow: 'text-yellow-600',
+                    gray: 'text-gray-600'
+                };
+                // Quitar clases de color anteriores y añadir la nueva
+                allDOMElements.statusMessage.classList.remove('text-red-600', 'text-green-600', 'text-blue-600', 'text-yellow-600', 'text-gray-600');
+                allDOMElements.statusMessage.classList.add(colorClasses[color] || colorClasses.gray);
+                allDOMElements.statusMessage.hidden = false;
+
+                // Ocultar después de una duración si se especifica
+                if (duration > 0) {
+                    setTimeout(() => {
+                        allDOMElements.statusMessage.hidden = true;
+                    }, duration);
+                }
+            }
+
+            // --- Funciones de Procesamiento y Lógica ---
+
+            async function extractPdfText(file) {
+                 allDOMElements.sourceTextDisplay.innerHTML = '<div class="flex justify-center items-center h-full"><div class="loader mr-2"></div> Extrayendo texto del PDF...</div>';
+                 return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        const typedarray = new Uint8Array(e.target.result);
+                        try {
+                            const pdf = await pdfjsLib.getDocument({data: typedarray}).promise;
+                            let fullText = "";
+                            const pagePromises = [];
+                            for (let i = 1; i <= pdf.numPages; i++) {
+                                // Procesar páginas en paralelo para acelerar
+                                pagePromises.push(
+                                    pdf.getPage(i).then(page => page.getTextContent())
+                                );
+                            }
+                            const allTextContents = await Promise.all(pagePromises);
+                            allTextContents.forEach(textContent => {
+                                textContent.items.forEach(item => {
+                                    fullText += item.str + " ";
+                                });
+                                fullText += "\n\n"; // Separador entre páginas
+                            });
+
+                            resolve(fullText.trim());
+                        } catch (error) {
+                            console.error('Error general al cargar PDF:', error);
+                            reject(new Error(`No se pudo cargar el PDF. ¿Está dañado o protegido? Detalles: ${error.message}`));
+                        }
+                    };
+                     reader.onerror = (error) => {
+                        console.error('Error leyendo el archivo:', error);
+                        reject(new Error("Error al leer el archivo PDF."));
+                     };
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+
+            async function handlePdfUpload(event) {
+                const file = event.target.files[0];
+                if (!file || file.type !== 'application/pdf') {
+                    // alert('Por favor, selecciona un archivo PDF.'); // Usar status message
+                    showStatusMessage("Por favor, selecciona un archivo PDF válido.", 'yellow', 3000);
+                    event.target.value = ''; // Resetear input
+                    return;
+                }
+
+                allDOMElements.fileNameDisplay.textContent = `Cargando: ${file.name}...`;
+                resetAppState();
+
+                try {
+                    currentPDFText = await extractPdfText(file);
+                    allDOMElements.sourceTextDisplay.textContent = currentPDFText;
+                    allDOMElements.fileNameDisplay.textContent = `Archivo cargado: ${file.name}`;
+                    allDOMElements.alternativeExplanationBtn.disabled = false;
+                } catch (error) {
+                     console.error('Error procesando el PDF:', error);
+                     allDOMElements.sourceTextDisplay.textContent = `Error al procesar el PDF: ${error.message}`;
+                     allDOMElements.fileNameDisplay.textContent = 'Error al cargar';
+                     showStatusMessage(`Error al procesar el PDF: ${error.message}`, 'red');
+                }
+            }
+
+            function resetAppState() {
+                 currentPDFText = "";
+                 if (allDOMElements.studentSummary) allDOMElements.studentSummary.value = "";
+                 if (allDOMElements.geminiFeedbackArea) allDOMElements.geminiFeedbackArea.hidden = true;
+                 if (allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
+                 if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = currentActivityId ? currentPDFText : 'Selecciona un modo y carga un PDF para empezar.';
+                 if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = currentActivityId ? allDOMElements.fileNameDisplay.textContent : 'Ningún archivo seleccionado.';
+                 if (allDOMElements.alternativeExplanationBtn) allDOMElements.alternativeExplanationBtn.disabled = true;
+                 if (allDOMElements.geminiEvaluateBtn) allDOMElements.geminiEvaluateBtn.disabled = true;
+                 if (allDOMElements.downloadBtn) allDOMElements.downloadBtn.disabled = true;
+                 if (allDOMElements.wordCount) allDOMElements.wordCount.textContent = '0';
+                 if (allDOMElements.summaryTitleInput) allDOMElements.summaryTitleInput.value = "";
+                 // Detener listener anterior si existe
+                 if (firestoreListenerUnsubscribe) {
+                    firestoreListenerUnsubscribe();
+                    firestoreListenerUnsubscribe = null;
+                 }
+            }
+
+            function updateWordCount() {
+                const text = allDOMElements.studentSummary.value.trim();
+                const words = text === '' ? 0 : text.split(/\s+/).length;
+                allDOMElements.wordCount.textContent = words;
+                allDOMElements.geminiEvaluateBtn.disabled = (text === '' || currentPDFText === '');
+                allDOMElements.downloadBtn.disabled = (text === '');
+            }
+
+            function listenForLeaderboardUpdates(activityId = null) {
+                if (firestoreListenerUnsubscribe) {
+                    firestoreListenerUnsubscribe();
+                    firestoreListenerUnsubscribe = null;
+                    console.log("Previous listener stopped.");
+                }
+
+                if (!db) { console.error("Firestore DB not initialized"); return; }
+                if (!allDOMElements.leaderboardSection) { console.error("Leaderboard section not found"); return;}
+
+
+                if (!activityId) {
+                    allDOMElements.leaderboardSection.hidden = true;
+                    return;
+                }
+
+                allDOMElements.leaderboardSection.hidden = false;
+                allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Cargando leaderboard...</p>';
+
+                const collectionPath = `activities/${activityId}/progress`;
+                const progressCollectionRef = db.collection(collectionPath);
+                console.log("Setting up listener for:", collectionPath);
+
+                firestoreListenerUnsubscribe = progressCollectionRef.orderBy("lastActive", "desc").limit(10)
+                 .onSnapshot((snapshot) => {
+                    console.log("Leaderboard snapshot received:", snapshot.size, "docs");
+                    const users = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data.name) {
+                            users.push({ id: doc.id, name: data.name });
+                        } else {
+                            console.warn("Doc in leaderboard missing 'name':", doc.id);
+                        }
+                    });
+
+                    allDOMElements.leaderboard.innerHTML = '';
+                    if (users.length === 0) {
+                         allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Nadie se ha unido aún.</p>';
+                         return;
+                    }
+
+                     allDOMElements.leaderboard.innerHTML = '<ul class="list-disc list-inside space-y-1"></ul>';
+                     const listElement = allDOMElements.leaderboard.querySelector('ul');
+
+                    users.forEach(p => {
+                        const isCurrentUser = p.id === userId;
+                        const displayName = p.name;
+                        const listItem = document.createElement('li');
+                        listItem.className = `text-sm truncate ${isCurrentUser ? 'font-bold text-blue-600' : 'text-gray-700'}`;
+                        listItem.textContent = isCurrentUser ? `Tú (${displayName})` : displayName;
+                        listItem.title = displayName; // Tooltip for long names
+                        listElement.appendChild(listItem);
+                    });
+                }, (error) => {
+                    console.error(`Error escuchando leaderboard (${collectionPath}):`, error);
+                    let errorMsg = "Error al cargar el progreso.";
+                    if (error.code === 'permission-denied') {
+                         console.error("PERMISSION DENIED on listener. Check Firestore rules for path:", collectionPath);
+                         errorMsg = "Error de permisos. Revisa las reglas de Firestore.";
+                    } else if (error.code === 'unimplemented' || error.message.includes('offline')) {
+                         console.error("Firestore offline or network issue.");
+                         errorMsg = "Problema de red. Reintentando...";
+                         // Podríamos intentar re-attach el listener aquí con backoff
+                    }
+                     allDOMElements.leaderboard.innerHTML = `<p class="text-red-500 text-sm">${errorMsg}</p>`;
+                });
+            }
+
+
+            async function registerUserInLeaderboard(activityId = null) {
+                 if (!userId || !db || !userDisplayName || !activityId) return Promise.resolve(); // Resolver promesa si no aplica
+                 const userProgressRef = db.doc(`activities/${activityId}/progress/${userId}`);
+                 try {
+                     console.log(`Registering user ${userDisplayName} (${userId}) in activity ${activityId}`);
+                     // Usar await para asegurar que se completa antes de continuar (si es necesario)
+                     await userProgressRef.set({
+                         name: userDisplayName,
+                         lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                     }, { merge: true });
+                     console.log("User registered successfully.");
+                 } catch(e) {
+                    console.error("Error registrando en leaderboard:", e);
+                    // Lanzar error para que la función que llama (joinClassActivity) lo maneje
+                    throw new Error(`No se pudo registrar en la actividad: ${e.message}`);
+                 }
+            }
+
+
+            async function callGeminiAPI(prompt, button) {
+                const originalHTML = button ? button.innerHTML : '';
+                const originalTextContent = button ? button.textContent || button.innerText : '';
+                 if (button) {
+                     button.disabled = true;
+                     button.innerHTML = '<div class="loader inline-block mr-2" style="width: 1em; height: 1em; border-width: 2px;"></div>Procesando...';
+                 }
+
+                let resultText = `<span class="text-red-600">Error desconocido al contactar con la IA.</span>`; // Default error
+
+                try {
+                    const API_KEY = "";
+                    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+                    const safePrompt = prompt.length > 15000 ? prompt.substring(0, 15000) + "\n[... texto truncado ...]" : prompt;
+                    const payload = { contents: [{ parts: [{ text: safePrompt }] }] };
+
+                    let response;
+                    let attempts = 0;
+                    const maxAttempts = 3;
+                    let delay = 1000;
+
+                    while (attempts < maxAttempts) {
+                        try {
+                            response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                            if (response.status === 429 || response.status >= 500) { throw new Error(`API returned status ${response.status}`); }
+                            if (!response.ok) { const errorBody = await response.text(); throw new Error(`Error ${response.status} en la API: ${response.statusText}. Body: ${errorBody}`); }
+                            break;
+                        } catch (fetchError) {
+                            attempts++;
+                            if (attempts >= maxAttempts) { throw fetchError; }
+                            console.warn(`Attempt ${attempts} failed: ${fetchError.message}. Retrying in ${delay / 1000}s...`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            delay *= 2;
+                        }
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+
+                    if (!candidate) {
+                        if (result.promptFeedback && result.promptFeedback.blockReason) { throw new Error(`Contenido bloqueado por la API: ${result.promptFeedback.blockReason}`); }
+                        else { console.error("Respuesta API inesperada:", result); throw new Error("Respuesta inválida de la API."); }
+                    }
+                    if (candidate.finishReason && candidate.finishReason !== "STOP") {
+                         if (candidate.finishReason === "MAX_TOKENS" && candidate.content?.parts?.[0]?.text) { console.warn("API finishReason: MAX_TOKENS."); }
+                         else { throw new Error(`API stop reason: ${candidate.finishReason}`); }
+                    }
+
+                    if (candidate?.content?.parts?.[0]?.text) {
+                        resultText = candidate.content.parts[0].text
+                             .replace(/(\r\n|\r|\n){2,}/g, '\n\n')
+                             .replace(/\n/g, '<br>');
+                    } else { throw new Error("No se recibió texto válido de la API."); }
+
+                } catch (error) {
+                    console.error("Error llamando a la API de Gemini:", error);
+                     resultText = `<span class="text-red-600">Lo siento, error al contactar con la IA: ${error.message}</span>`;
+                } finally {
+                    if (button) {
+                        button.disabled = false;
+                        // Restaurar contenido original
+                        button.innerHTML = originalHTML; // Intentar restaurar HTML completo
+                         // Si falla restaurar HTML (raro), intentar restaurar texto
+                         if (button.innerHTML === '') button.textContent = originalTextContent;
+                    }
+                }
+                return resultText; // Devolver siempre el texto resultado (o el error)
+            }
+
+
+            async function generateAlternativeExplanation() {
+                 if (!currentPDFText || !allDOMElements.alternativeExplanationBtn) return;
+                 const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText;
+                 const prompt = `Eres un profesor de apoyo para alumnos de Bachillerato. Re-explica el siguiente texto extraído de un PDF usando un lenguaje más sencillo, claro y, si es posible, alguna analogía. Mantén el tono amigable y educativo. TEXTO A EXPLICAR: "${textSnippet}"`;
+
+                 // Mostrar UI de carga antes de llamar a la API
+                 allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Generando Explicación Alternativa...</h4><div class="loader"></div>`;
+                 allDOMElements.alternativeExplanationDisplay.classList.remove('hidden');
+                 allDOMElements.sourceTextDisplay.classList.add('hidden');
+
+                 const explanation = await callGeminiAPI(prompt, allDOMElements.alternativeExplanationBtn); // Pasar el botón
+
+                 // Actualizar UI con el resultado (o error)
+                 allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Explicación Alternativa:</h4><div>${explanation}</div><hr class="my-4"><button id="close-alt-explanation" class="text-sm text-blue-600 hover:underline">Cerrar</button>`;
+
+                 const closeBtn = document.getElementById('close-alt-explanation');
+                 if(closeBtn){
+                     closeBtn.removeEventListener('click', closeAltExplanation);
+                     closeBtn.addEventListener('click', closeAltExplanation);
+                 }
+            }
+             function closeAltExplanation() {
+                if (!allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) return;
+                 allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
+                 allDOMElements.sourceTextDisplay.classList.remove('hidden');
+            }
+
+            async function evaluateReasoning() {
+                if (!currentPDFText || !allDOMElements.studentSummary || allDOMElements.studentSummary.value.trim() === '' || !allDOMElements.geminiEvaluateBtn) return;
+
+                const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText;
+                const summaryText = allDOMElements.studentSummary.value;
+                const prompt = `Actúa como un profesor de Bachillerato corrigiendo un resumen. El alumno ha leído un PDF (solo tienes este extracto) y ha escrito el resumen.
+                - EXTRACTO DEL PDF: "${textSnippet}"
+                - RESUMEN DEL ALUMNO: "${summaryText}"
+
+                Evalúa en un párrafo corto si el resumen capta las ideas principales del extracto y conecta bien las ideas. Dale feedback constructivo y positivo sobre cómo mejorar. Anímale. No des nota. Empieza saludando de forma cercana.`;
+
+                // Mostrar UI de carga antes de llamar a la API
+                allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Generando Valoración con IA...</h3><div class="loader"></div>`;
+                allDOMElements.geminiFeedbackArea.hidden = false;
+
+                const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn); // Pasar el botón
+
+                // Actualizar UI con el resultado (o error)
+                allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Valoración con IA</h3><div class="p-4 bg-green-50 border border-green-200 rounded-lg prose prose-custom text-gray-700">${evaluation}</div>`;
+            }
+
+            function downloadSummaries() {
+                 if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return;
+
+                 const summary = allDOMElements.studentSummary.value.trim();
+                 const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen del PDF";
+                 if (summary === "") {
+                     showStatusMessage("No hay resumen para descargar.", 'yellow', 3000);
+                     return;
+                 }
+                 let fileContent = `Resumen de: ${title}\n`;
+                 fileContent += `Realizado por: ${userDisplayName}\n\n`; // Usar el nick guardado
+                 fileContent += `========================================\n`;
+                 fileContent += summary;
+
+                 try {
+                     const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+                     const link = document.createElement('a');
+                     link.href = URL.createObjectURL(blob);
+                     const safeFileName = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                     const safeDisplayName = userDisplayName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                     link.download = `resumen_${safeFileName.substring(0,20)}_${safeDisplayName.substring(0,10)}.txt`;
+
+                     document.body.appendChild(link);
+                     link.click();
+                     document.body.removeChild(link);
+                     URL.revokeObjectURL(link.href);
+
+                     showStatusMessage("Resumen descargado.", 'green', 3000);
+
+                     // Guardar resumen en Firestore si es modo clase
+                     if (currentActivityId && userId && db) {
+                         const summaryRef = db.doc(`activities/${currentActivityId}/progress/${userId}`);
+                         summaryRef.set({ summary: summary }, { merge: true })
+                             .then(() => console.log("Resumen guardado en Firestore."))
+                             .catch(e => console.error("Error guardando resumen en Firestore:", e));
+                     }
+                 } catch (e) {
+                     console.error("Error al generar o descargar el archivo:", e);
+                     showStatusMessage(`Error al descargar: ${e.message}`, 'red');
+                 }
+            }
+
+            // --- INICIAR LA APLICACIÓN ---
+            initializeApp();
+
+        }); // --- FIN: DOMCONTENTLOADED ---
+    </script>
+</head>
+<body class="text-gray-800">
+
+    <!-- Pantalla de Nick -->
+    <div id="login-overlay" class="modal-overlay" hidden>
+        <div class="bg-white p-10 rounded-2xl shadow-2xl text-center max-w-sm w-full mx-4">
+            <h2 class="text-2xl font-bold mb-4 text-gray-900">Bienvenido/a</h2>
+            <p class="text-gray-600 mb-6">Escribe un "Nick" o tu IDEA para identificarte en la clase.</p>
+            <input id="nick-input" type="text" placeholder="Escribe tu nick aquí..." class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500">
+            <button id="login-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                Guardar Nick y Continuar
+            </button>
+            <p id="nick-error" class="text-red-500 text-sm mt-3" hidden>Por favor, escribe un nick.</p>
+        </div>
+    </div>
+
+    <!-- Selector de Modo -->
+    <div id="mode-selector" class="container mx-auto p-8 text-center" hidden>
+         <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-6">Herramienta de Resumen IA</h1>
+         <p class="text-gray-600 mb-8">Elige cómo quieres usar la aplicación:</p>
+         <div class="flex flex-col md:flex-row justify-center gap-6">
+             <button id="individual-mode-btn" class="bg-white text-blue-700 font-bold py-4 px-8 rounded-lg shadow-lg border border-blue-200 hover:bg-blue-50 transition transform hover:scale-105">
+                 <span class="text-xl block mb-2">👤</span> Modo Individual <span class="block text-sm font-normal text-gray-500">(Sube tu propio PDF)</span>
+             </button>
+             <button id="class-mode-btn" class="bg-white text-green-700 font-bold py-4 px-8 rounded-lg shadow-lg border border-green-200 hover:bg-green-50 transition transform hover:scale-105">
+                  <span class="text-xl block mb-2">👥</span> Modo Clase <span class="block text-sm font-normal text-gray-500">(Únete o crea una actividad)</span>
+             </button>
+         </div>
+         <p id="status-message" class="mt-6 text-sm" hidden></p>
+    </div>
+
+    <!-- Sección para Unirse a Clase -->
+     <div id="join-class-section" class="container mx-auto p-8 max-w-md text-center" hidden>
+         <h2 class="text-2xl font-bold text-gray-900 mb-4">Unirme a Actividad de Clase</h2>
+         <p class="text-gray-600 mb-6">Pídele el código de la actividad a tu profesor e introdúcelo aquí:</p>
+         <input id="activity-code-input" type="text" placeholder="Código de la Actividad" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500">
+         <button id="join-activity-btn" class="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-300">
+             Unirme a la Actividad
+         </button>
+         <!-- Botón Volver (funcionalidad asignada en JS) -->
+          <button class="mt-4 text-sm text-gray-600 hover:underline">Volver</button>
+     </div>
+
+     <!-- Sección para Crear Actividad (Profesor) -->
+     <div id="teacher-setup-section" class="container mx-auto p-8 max-w-md text-center" hidden>
+         <h2 class="text-2xl font-bold text-gray-900 mb-4">Crear Actividad de Clase</h2>
+         <p class="text-gray-600 mb-6">Sube el PDF que quieres que trabajen tus alumnos:</p>
+         <label for="teacher-pdf-upload" class="w-full cursor-pointer bg-blue-100 text-blue-700 font-semibold py-3 px-6 rounded-lg hover:bg-blue-200 transition flex items-center justify-center mb-4">
+             <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+             Seleccionar PDF para la Clase
+         </label>
+         <input type="file" id="teacher-pdf-upload" class="hidden" accept=".pdf">
+         <button id="create-activity-btn" disabled class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:bg-gray-400 disabled:cursor-not-allowed">
+             Crear Actividad de Clase
+         </button>
+          <!-- Botón Volver (funcionalidad asignada en JS) -->
+          <button class="mt-4 text-sm text-gray-600 hover:underline">Volver</button>
+     </div>
+
+     <!-- Sección Actividad Creada (Profesor) -->
+     <div id="activity-created-section" class="container mx-auto p-8 max-w-md text-center" hidden>
+         <h2 class="text-2xl font-bold text-green-600 mb-4">¡Actividad Creada!</h2>
+         <p class="text-gray-700 mb-6">Comparte este código con tus alumnos para que puedan unirse:</p>
+         <div class="bg-green-100 border border-green-300 text-green-800 text-xl md:text-2xl font-mono p-4 rounded-lg mb-6 break-all select-all cursor-pointer" title="Haz clic para copiar">
+             <span id="activity-code-display"></span>
+         </div>
+         <!-- Botón Volver (funcionalidad asignada en JS) -->
+         <button class="mt-4 text-sm text-gray-600 hover:underline">Crear otra o Volver</button>
+     </div>
+
+
+    <!-- CONTENIDO PRINCIPAL DE LA APP (Común para Individual y Clase) -->
+    <div id="main-app-content" class="container mx-auto p-4 md:p-8 max-w-7xl" hidden>
+        <header class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Herramienta de Resumen IA</h1>
+             <!-- Botón Volver/Cambiar Modo -->
+             <button class="mt-2 text-sm text-blue-600 hover:underline">[ Cambiar Modo / PDF / Salir ]</button>
+        </header>
+
+        <!-- Carga PDF (Solo visible en modo Individual) y Leaderboard (Solo visible en modo Clase) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            <div id="pdf-upload-section" class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg border border-gray-200" hidden>
+                <h2 class="text-xl font-bold mb-4">1. Carga tu Documento PDF</h2>
+                <label for="pdf-upload" class="w-full cursor-pointer bg-blue-100 text-blue-700 font-semibold py-3 px-6 rounded-lg hover:bg-blue-200 transition flex items-center justify-center">
+                    <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Seleccionar Archivo PDF
+                </label>
+                <input type="file" id="pdf-upload" class="hidden" accept=".pdf">
+            </div>
+             <!-- Placeholder para alinear si pdf-upload está oculto -->
+            <div id="pdf-placeholder" class="lg:col-span-2" hidden></div>
+
+            <div id="leaderboard-section" class="bg-white p-6 rounded-2xl shadow-lg border border-gray-200" hidden>
+                 <h2 class="text-xl font-bold mb-2">Compañeros Conectados</h2>
+                 <div id="leaderboard" class="space-y-1 max-h-40 overflow-y-auto">
+                     <p class="text-gray-500 text-sm">Cargando...</p>
+                 </div>
+            </div>
+        </div>
+         <p id="file-name" class="text-center text-sm text-gray-600 mb-6">Ningún archivo seleccionado.</p>
+
+
+        <main id="student-workspace" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Columna Izquierda: Texto del PDF -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-800">Contenido del PDF</h2>
+                    <button id="alternative-explanation-btn" disabled class="flex items-center space-x-2 bg-purple-100 text-purple-700 font-semibold py-2 px-4 rounded-lg hover:bg-purple-200 transition disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed">
+                        <span>✨ Explicación Alternativa</span>
+                    </button>
+                </div>
+                <div id="source-text-container" class="prose prose-custom text-gray-700 h-96 overflow-y-auto p-4 border rounded-lg bg-gray-50">
+                    <div id="source-text-display">Selecciona un modo y carga un PDF para empezar.</div>
+                    <div id="alternative-explanation-display" class="hidden p-4 bg-purple-50 rounded-lg"></div>
+                </div>
+            </div>
+
+            <!-- Columna Derecha: Resumen y Evaluación -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                 <h2 class="text-2xl font-bold mb-4 text-gray-800">Tu Resumen</h2>
+                 <input id="summary-title-input" type="text" placeholder="Título para tu resumen (opcional)" class="w-full p-2 mb-2 border border-gray-300 rounded-lg">
+                 <textarea id="student-summary" class="w-full h-64 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition" placeholder="Escribe aquí tu resumen del PDF..."></textarea>
+                 <div class="flex flex-wrap items-center justify-between mt-4 gap-4">
+                     <div class="flex items-center gap-2">
+                        <button id="gemini-evaluate-btn" disabled class="flex items-center space-x-2 bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                            <span>✨ Evaluar Razonamiento</span></button>
+                        <button id="download-btn" disabled class="flex items-center space-x-2 bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                            <span>📥 Descargar Resumen</span></button>
+                     </div>
+                     <div class="text-sm text-gray-600 font-medium">Palabras: <span id="word-count">0</span></div>
+                 </div>
+
+                 <div id="gemini-feedback-area" class="mt-6" hidden></div>
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>
+
