@@ -57,28 +57,30 @@
 
             // --- INICIALIZACIÓN ---
             function initializeApp() {
-                // CORREGIDO: Solo inicializa Firebase aquí. La asignación DOM y el resto se mueven a onAuthStateChanged.
+                // CORREGIDO: Ya NO llama a assignDOMElements aquí.
                 if (isAppInitialized) return;
-                console.log("Initializing Firebase...");
+                console.log("Initializing App core logic...");
+                // allDOMElements ya debería estar poblado por la llamada en DOMContentLoaded
+
                 try {
+                    console.log("Initializing Firebase...");
                     if (!firebaseConfig?.apiKey) throw new Error("firebaseConfig missing.");
                     if (!firebase?.apps?.length) { app = firebase.initializeApp(firebaseConfig); } else { app = firebase.app(); }
                     auth = firebase.auth(app); db = firebase.firestore(app);
                     console.log("Firebase services OK.");
 
-                    // Configurar listener AHORA, pero la lógica principal irá DENTRO del callback
                     console.log("Setting up Auth listener...");
-                    setupAuthListener();
+                    setupAuthListener(); // Este listener arrancará la UI cuando esté listo
                     console.log("Auth listener set up.");
 
                     // Marcar inicialización BÁSICA como completa (Firebase + Listener)
-                    // isAppInitialized = true; // NO marcar aquí, se hará dentro de onAuthStateChanged la primera vez
-
-                } catch (e) { console.error("CRITICAL ERROR init Firebase:", e); showFatalError(`Error inicialización Firebase: ${e.message}.`); }
+                    // isAppInitialized = true; // Se marcará dentro de onAuthStateChanged
+                    console.log("Core App Init finished. Waiting for Auth...");
+                } catch (e) { console.error("CRITICAL ERROR init core:", e); showFatalError(`Error inicialización: ${e.message}.`); }
             }
 
-            // CORREGIDO: Se llama DESDE onAuthStateChanged después de tener usuario
-            function assignDOMElementsAndStartUI() {
+            // CORREGIDO: Se llama directamente desde DOMContentLoaded y guarda en global
+            function assignDOMElements() {
                  console.log("Assigning DOM elements function called.");
                  try {
                      const ids = ['loginOverlay', 'loginBtn', 'nickInput', 'nickError', 'modeSelector', 'individualModeBtn', 'classModeBtn', 'classOptions', 'teacherOptionBtn', 'studentOptionBtn', 'joinClassSection', 'activityCodeInput', 'joinActivityBtn', 'teacherSetupSection', 'teacherPdfUpload', 'createActivityBtn', 'activityCreatedSection', 'activityCodeDisplay', 'resetActivityBtn', 'mainAppContent', 'leaderboardSection', 'leaderboard', 'pdfUploadSection', 'pdfUpload', 'fileNameDisplay', 'sourceTextDisplay', 'textContainer', 'alternativeExplanationBtn', 'studentSummary', 'wordCount', 'geminiEvaluateBtn', 'geminiFeedbackArea', 'downloadBtn', 'summaryTitleInput', 'statusMessage', 'pdfPlaceholder', 'apiKeySection', 'apiKeyInput', 'saveApiKeyBtn', 'showApiKeyBtn', 'backFromApiKeyBtn', 'backFromClassOptions'];
@@ -87,19 +89,20 @@
                          console.log(`Assigning DOM element: ${id}`); const element = document.getElementById(id);
                          if (!element) { console.error(`--> Element ID '${id}' NOT FOUND!`); missing.push(id); }
                          allDOMElements[id] = element; // Asignar al objeto GLOBAL
-                         console.log(`   Element ${id}:`, element ? 'Found' : 'NULL');
+                         // console.log(`   Element ${id}:`, element ? 'Found' : 'NULL'); // Opcional: demasiado verbose
                      });
                      const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'apiKeySection'];
                      const missingCrucial = crucial.filter(k => !allDOMElements[k]);
-                     if (missingCrucial.length > 0) { throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`); }
+                     if (missingCrucial.length > 0) {
+                         // Lanzar error si falta un elemento crucial
+                         throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`);
+                     }
                      if (missing.length > 0) { console.warn(`Elementos HTML no cruciales faltantes: ${missing.join(', ')}.`); }
-                     // Listeners API Key (se asignan aquí porque dependen de elementos cruciales)
+                     // Listeners API Key (se asignan aquí porque estos elementos deben existir)
                      allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
                      allDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
                      console.log("DOM assignment check OK.");
-                     isAppInitialized = true; // Marcar inicialización COMPLETA (Firebase + DOM + Auth)
-                     console.log("App Init Complete. Loading user nick...");
-                     loadUserNickAndDecideView(); // Arrancar flujo UI
+                     return true; // Indicar éxito
 
                  } catch (domError) { console.error("Error asignando DOM:", domError); throw domError; } // Re-lanzar error
             }
@@ -117,17 +120,17 @@
                         catch(e) { handleAuthError(e); }
                     } else {
                         userId = user.uid;
-                        // CORREGIDO: Solo ejecutar el arranque completo LA PRIMERA VEZ que tenemos usuario
+                        // CORREGIDO: Arrancar la UI desde aquí, la primera vez que tenemos usuario
                         if (!isAppInitialized) {
                              console.log("User detected, DOM ready, Firebase ready. Starting UI setup...");
-                             assignDOMElementsAndStartUI(); // Asigna elementos y arranca la lógica de UI
+                             isAppInitialized = true; // Marcar como inicializado AHORA
+                             await loadUserNickAndDecideView(); // Arrancar flujo UI (esto incluye showModeSelector o showNickPrompt)
                         } else if (!userDisplayName) {
-                             // Si ya inicializamos pero falta el nick (ej: recarga de página sin nick guardado)
+                             // Si ya inicializamos pero falta el nick
                              console.log("App initialized but nick missing, loading nick/UI...");
                              await loadUserNickAndDecideView();
                         } else {
                              console.log("User already authenticated and app initialized.");
-                             // Podríamos verificar si la UI está visible aquí si fuera necesario
                         }
                     }
                 });
@@ -269,15 +272,13 @@
             function downloadSummaries() { /* ... (igual) ... */ console.log("downloadSummaries."); if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return; const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF"; if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; } let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${summary}`; try { const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); const sf = title.replace(/[^a-z0-9]/gi, '_').toLowerCase(); const su = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase(); link.download = `resumen_${sf.substring(0,20)}_${su.substring(0,10)}.txt`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href); showStatusMessage("Descargado.", 'green', 3000); if (currentActivityId && userId && db) { db.doc(`activities/${currentActivityId}/progress/${userId}`).set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true }).catch(e => console.error("Err saving summary:", e)); } } catch (e) { console.error("Err download:", e); showStatusMessage(`Error: ${e.message}`, 'red'); } }
 
             // --- INICIAR LA APLICACIÓN ---
-            // CORREGIDO: Llamar a assignDOMElements PRIMERO desde DOMContentLoaded
+            // CORREGIDO: Llamar a assignDOMElements PRIMERO y LUEGO initializeApp si tiene éxito
             try {
                 if (assignDOMElements()) { // Si la asignación fue exitosa
-                     // Usar setTimeout para asegurar renderizado antes de lógica Firebase
-                     setTimeout(initializeApp, 0); // Retraso mínimo
+                     initializeApp(); // Inicializar Firebase y listeners
                 } else {
                      // assignDOMElements ya habrá lanzado un error si faltan cruciales
-                     // Este else es por si acaso no lanzara error pero devolviera false
-                     throw new Error("La asignación inicial de elementos del DOM falló silenciosamente.");
+                     throw new Error("La asignación inicial falló.");
                 }
             } catch(initDomError) {
                  console.error("CRITICAL ERROR during initial DOM assignment:", initDomError);
