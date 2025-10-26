@@ -22,7 +22,6 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         [hidden] { display: none !important; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 999; }
-        /* Estilo para el botón de reset */
         .btn-danger { background-color: #dc3545; color: white; }
         .btn-danger:hover { background-color: #c82333; }
         .btn-danger:disabled { background-color: #f8d7da; color: #721c24; cursor: not-allowed; }
@@ -38,7 +37,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log("DOM fully loaded and parsed.");
 
-            // --- TU CONFIGURACIÓN DE FIREBASE (YA INCLUIDA) ---
+            // --- TU CONFIGURACIÓN DE FIREBASE ---
             const firebaseConfig = {
                 apiKey: "AIzaSyBiaYwiczL2M-1jr6G7DAAhRTyF1SXJKRI",
                 authDomain: "resumencomputacionfisica.firebaseapp.com",
@@ -47,7 +46,7 @@
                 messagingSenderId: "411512056489",
                 appId: "1:411512056489:web:75fd8e99317937c38297b8"
             };
-            // -----------------------------------------------------
+            // ------------------------------------
 
             let app, auth, db, userId, userDisplayName;
             let currentPDFText = "";
@@ -57,26 +56,23 @@
             let firestoreListenerUnsubscribe = null;
             let isAppInitialized = false;
 
-            // --- INICIALIZACIÓN SECUENCIAL Y ROBUSTA ---
+            // --- INICIALIZACIÓN ---
             function initializeApp() {
-                if (isAppInitialized) return;
+                if (isAppInitialized) {
+                    console.log("App already initialized.");
+                    return;
+                }
                 console.log("Initializing App...");
                 try {
                     console.log("Initializing Firebase...");
-                    if (!firebaseConfig || !firebaseConfig.apiKey) throw new Error("firebaseConfig incompleta.");
-                    if (!firebase.apps.length) {
-                        app = firebase.initializeApp(firebaseConfig);
-                        console.log("Firebase initialized.");
-                    } else {
-                        app = firebase.app();
-                        console.log("Firebase app already exists.");
-                    }
+                    if (!firebaseConfig?.apiKey) throw new Error("firebaseConfig incompleta.");
+                    if (!firebase?.apps?.length) { app = firebase.initializeApp(firebaseConfig); } else { app = firebase.app(); }
                     auth = firebase.auth(app);
                     db = firebase.firestore(app);
-                    console.log("Firebase Auth and Firestore services obtained.");
+                    console.log("Firebase services obtained.");
 
                     console.log("Assigning DOM elements...");
-                    assignDOMElements();
+                    assignDOMElements(); // Lanza error si falla
                     console.log("DOM elements assigned.");
 
                     console.log("Setting up Auth listener...");
@@ -87,11 +83,12 @@
                     console.log("App Initialization Complete.");
                 } catch (e) {
                     console.error("CRITICAL ERROR during initialization:", e);
-                    showFatalError(`Error fatal durante la inicialización: ${e.message}. Revisa la \`firebaseConfig\` y la conexión a Firebase.`);
+                    showFatalError(`Error inicialización: ${e.message}. Revisa config Firebase y HTML.`);
                 }
             }
 
             function assignDOMElements() {
+                 console.log("Assigning DOM elements function called.");
                  try {
                      allDOMElements = {
                          loginOverlay: document.getElementById('login-overlay'),
@@ -101,9 +98,9 @@
                          modeSelector: document.getElementById('mode-selector'),
                          individualModeBtn: document.getElementById('individual-mode-btn'),
                          classModeBtn: document.getElementById('class-mode-btn'),
-                         classOptions: document.getElementById('class-options'), // Contenedor botones Profe/Alumno
-                         teacherOptionBtn: document.getElementById('teacher-option-btn'), // Botón Soy Profesor
-                         studentOptionBtn: document.getElementById('student-option-btn'), // Botón Soy Alumno
+                         classOptions: document.getElementById('class-options'),
+                         teacherOptionBtn: document.getElementById('teacher-option-btn'),
+                         studentOptionBtn: document.getElementById('student-option-btn'),
                          joinClassSection: document.getElementById('join-class-section'),
                          activityCodeInput: document.getElementById('activity-code-input'),
                          joinActivityBtn: document.getElementById('join-activity-btn'),
@@ -131,43 +128,31 @@
                          statusMessage: document.getElementById('status-message'),
                          pdfPlaceholder: document.getElementById('pdf-placeholder'),
                      };
-                     const crucialElements = ['loginOverlay', 'modeSelector', 'mainAppContent', 'loginBtn', 'nickInput', 'individualModeBtn', 'classModeBtn', 'teacherOptionBtn', 'studentOptionBtn', 'classOptions'];
-                     crucialElements.forEach(key => {
-                         if (!allDOMElements[key]) {
-                             throw new Error(`Elemento esencial '${key}' no encontrado.`);
-                         }
-                     });
+                     // Verificar elementos cruciales y lanzar error si faltan
+                     const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'loginBtn', 'nickInput', 'individualModeBtn', 'classModeBtn', 'teacherOptionBtn', 'studentOptionBtn', 'classOptions', 'sourceTextDisplay', 'studentSummary'];
+                     let missing = [];
+                     crucial.forEach(k => { if (!allDOMElements[k]) missing.push(k); });
+                     if (missing.length > 0) {
+                         throw new Error(`Faltan elementos HTML esenciales: ${missing.join(', ')}.`);
+                     }
                      assignStaticBackButtonListeners();
-                 } catch (domError) {
-                      console.error("Error al asignar elementos del DOM:", domError);
-                      throw domError;
-                 }
+                 } catch (domError) { console.error("Error asignando DOM:", domError); throw domError; }
             }
 
             function assignStaticBackButtonListeners() {
-                // Botones 'Volver' ahora apuntan a showModeSelector
-                const backButtons = document.querySelectorAll('#join-class-section button.hover\\:underline, #teacher-setup-section button.hover\\:underline, #activity-created-section button.hover\\:underline');
-                backButtons.forEach(button => {
-                    button.removeAttribute('onclick'); // Limpiar inline
-                    button.removeEventListener('click', showModeSelector);
-                    button.addEventListener('click', showModeSelector);
-                });
+                // Selector -> Opciones Clase
+                const backFromClassOptions = document.getElementById('back-from-class-options');
+                if (backFromClassOptions) backFromClassOptions.addEventListener('click', showModeSelector);
+                // Unirse/Crear/Creada -> Selector
+                const backToModeSelectorButtons = document.querySelectorAll('#join-class-section button.hover\\:underline, #teacher-setup-section button.hover\\:underline, #activity-created-section button.hover\\:underline');
+                backToModeSelectorButtons.forEach(button => { button.onclick = null; button.removeEventListener('click', showModeSelector); button.addEventListener('click', showModeSelector); });
+                 // App Principal -> Recargar (Salir)
                  const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline');
-                 if (mainBackButton) {
-                     mainBackButton.removeAttribute('onclick');
-                     mainBackButton.removeEventListener('click', () => location.reload()); // Limpiar
-                     mainBackButton.addEventListener('click', () => location.reload()); // Recargar para volver al inicio
-                 }
-                 // Botón volver de las opciones Profesor/Alumno
-                 const backFromClassOptions = document.getElementById('back-from-class-options');
-                 if (backFromClassOptions) {
-                    backFromClassOptions.addEventListener('click', showModeSelector);
-                 }
+                 if (mainBackButton) { mainBackButton.onclick = null; mainBackButton.removeEventListener('click', () => location.reload()); mainBackButton.addEventListener('click', () => location.reload()); }
             }
 
-
             function setupAuthListener() {
-                if (!auth) { showFatalError("Servicio de autenticación no disponible."); return; }
+                if (!auth) { showFatalError("Auth no disponible."); return; }
                 auth.onAuthStateChanged(async (user) => {
                     console.log("Auth state changed. User:", user ? user.uid : 'null');
                     if (!user) {
@@ -175,9 +160,17 @@
                         catch(e) { handleAuthError(e); }
                     } else {
                         userId = user.uid;
-                        if (!userDisplayName) await loadUserNickAndDecideView();
-                        else if (allDOMElements.modeSelector?.hidden && allDOMElements.mainAppContent?.hidden) {
-                             showModeSelector(); // Mostrar selector si nada está visible
+                        // Cargar nick/UI solo si no está ya cargado O si cambió el UID (raro)
+                        if (!userDisplayName || userId !== user.uid) {
+                             console.log("User detected, loading nick/UI...");
+                             await loadUserNickAndDecideView();
+                        } else {
+                             console.log("User already authenticated and nick loaded.");
+                             // Si está autenticado pero ninguna UI visible, mostrar selector
+                             if (allDOMElements.modeSelector?.hidden && allDOMElements.mainAppContent?.hidden) {
+                                 console.log("Auth OK, but UI hidden. Showing mode selector.");
+                                 showModeSelector();
+                             }
                         }
                     }
                 });
@@ -185,12 +178,9 @@
 
             function handleAuthError(e) {
                  console.error("Authentication Error:", e);
-                 const configErrorCodes = ['auth/configuration-not-found', 'auth/operation-not-allowed'];
-                 if (configErrorCodes.includes(e.code) ) {
-                    showFatalError(`<b>Error Configuración:</b> 'Autenticación Anónima' no habilitada en Firebase.`);
-                } else {
-                    showFatalError(`Error autenticación: ${e.message}`);
-                }
+                 const configCodes = ['auth/configuration-not-found', 'auth/operation-not-allowed'];
+                 if (configCodes.includes(e.code)) { showFatalError(`<b>Error Config Firebase:</b> Auth Anónima no habilitada.`); }
+                 else { showFatalError(`Error auth: ${e.message}`); }
             }
 
             function showFatalError(message) {
@@ -198,53 +188,37 @@
                  try { document.body.innerHTML = `<div class="text-center p-8 text-red-500">${message}</div>`; } catch (e) {}
             }
 
-            // --- Funciones de Lógica de UI ---
+            // --- Funciones Lógica UI ---
 
             async function loadUserNickAndDecideView() {
-                console.log("loadUserNickAndDecideView called.");
-                if (!userId || !db || !allDOMElements.loginOverlay) {
-                     console.warn("loadUserNickAndDecideView prerequisites missing. Forcing Nick Prompt.");
+                console.log("loadUserNickAndDecideView called for user:", userId);
+                // Verificar requisitos
+                 if (!userId || !db || !allDOMElements.loginOverlay || !allDOMElements.modeSelector) {
+                     console.warn("loadUserNickAndDecideView prerequisites missing. Forcing Nick Prompt.", {userId, db, loginOverlay: !!allDOMElements.loginOverlay, modeSelector: !!allDOMElements.modeSelector});
                      showNickPrompt();
                      return;
                  }
                 const userRef = db.doc(`users/${userId}`);
                 try {
                     const doc = await userRef.get();
-                    if (doc.exists && doc.data().name) {
-                        userDisplayName = doc.data().name;
-                        showModeSelector();
-                    } else {
-                        showNickPrompt();
-                    }
+                    if (doc.exists && doc.data().name) { userDisplayName = doc.data().name; showModeSelector(); }
+                    else { showNickPrompt(); }
                 } catch (e) {
                     console.error("Error loading nick:", e);
-                     if (e.code === 'permission-denied') { showFatalError("Error permisos al leer nick ('users'). Revisa reglas."); }
+                     if (e.code === 'permission-denied') { showFatalError("Error permisos ('users'). Revisa reglas."); }
                      else { showNickPrompt(); }
                 }
             }
 
             function showNickPrompt() {
                 console.log("Showing Nick Prompt UI.");
-                if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent || !allDOMElements.loginBtn) {
-                     console.error("Missing critical elements in showNickPrompt.");
-                     showFatalError("Error interno al mostrar pantalla de Nick.");
-                     return;
-                }
+                if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent || !allDOMElements.loginBtn) { showFatalError("Error UI Nick."); return; }
                 allDOMElements.loginOverlay.hidden = false;
-                allDOMElements.modeSelector.hidden = true;
-                allDOMElements.mainAppContent.hidden = true;
-                // Ocultar otras secciones por si acaso
-                allDOMElements.joinClassSection.hidden = true;
-                allDOMElements.teacherSetupSection.hidden = true;
-                allDOMElements.activityCreatedSection.hidden = true;
-
-
-                allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit);
-                allDOMElements.loginBtn.addEventListener('click', handleNickSubmit);
-                allDOMElements.loginBtn.disabled = false;
-                allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
-                 if(allDOMElements.nickInput) allDOMElements.nickInput.value = '';
-                 if(allDOMElements.nickError) allDOMElements.nickError.hidden = true;
+                allDOMElements.modeSelector.hidden = true; allDOMElements.mainAppContent.hidden = true;
+                allDOMElements.joinClassSection.hidden = true; allDOMElements.teacherSetupSection.hidden = true; allDOMElements.activityCreatedSection.hidden = true;
+                allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit); allDOMElements.loginBtn.addEventListener('click', handleNickSubmit);
+                allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
+                if(allDOMElements.nickInput) allDOMElements.nickInput.value = ''; if(allDOMElements.nickError) allDOMElements.nickError.hidden = true;
             }
 
             async function handleNickSubmit() {
@@ -252,481 +226,340 @@
                  if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return;
                 const nick = allDOMElements.nickInput.value.trim();
                 if (nick === "") { allDOMElements.nickError.hidden = false; return; }
-                allDOMElements.nickError.hidden = true;
-                userDisplayName = nick;
-                const userRef = db.doc(`users/${userId}`);
+                allDOMElements.nickError.hidden = true; userDisplayName = nick; const userRef = db.doc(`users/${userId}`);
                 try {
-                    allDOMElements.loginBtn.disabled = true;
-                    allDOMElements.loginBtn.innerHTML = '<div class="loader inline-block"></div> Guardando...';
+                    allDOMElements.loginBtn.disabled = true; allDOMElements.loginBtn.innerHTML = '<div class="loader"></div> Guardando...';
                     await userRef.set({ name: userDisplayName }, { merge: true });
-                    allDOMElements.loginOverlay.hidden = true;
-                    showModeSelector();
-                } catch (e) {
-                    console.error("Error saving nick:", e);
-                    alert("Hubo un error al guardar tu nick.");
-                } finally {
-                    if (allDOMElements.loginBtn?.parentNode) {
-                        allDOMElements.loginBtn.disabled = false;
-                        allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
-                    }
-                }
+                    allDOMElements.loginOverlay.hidden = true; showModeSelector();
+                } catch (e) { console.error("Error saving nick:", e); alert("Error al guardar nick."); }
+                finally { if (allDOMElements.loginBtn?.parentNode) { allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar'; } }
             }
 
             function showModeSelector() {
                 console.log("Showing Mode Selector UI.");
                 if (!allDOMElements.modeSelector) return;
-                allDOMElements.modeSelector.hidden = false;
-                allDOMElements.classOptions.hidden = true; // Ocultar opciones Profe/Alumno
-                allDOMElements.joinClassSection.hidden = true;
-                allDOMElements.teacherSetupSection.hidden = true;
-                allDOMElements.activityCreatedSection.hidden = true;
+                // Ocultar todas las demás secciones principales
+                allDOMElements.loginOverlay.hidden = true;
+                allDOMElements.classOptions.hidden = true; allDOMElements.joinClassSection.hidden = true;
+                allDOMElements.teacherSetupSection.hidden = true; allDOMElements.activityCreatedSection.hidden = true;
                 allDOMElements.mainAppContent.hidden = true;
-                // Asegurar listeners del selector principal
+                // Mostrar el selector
+                allDOMElements.modeSelector.hidden = false;
+
+                // Reasignar listeners para asegurar que están activos
                 allDOMElements.individualModeBtn.removeEventListener('click', setupIndividualMode);
                 allDOMElements.individualModeBtn.addEventListener('click', setupIndividualMode);
-                allDOMElements.classModeBtn.removeEventListener('click', showClassOptionsUI); // Cambiado
-                allDOMElements.classModeBtn.addEventListener('click', showClassOptionsUI); // Cambiado
+                allDOMElements.classModeBtn.removeEventListener('click', showClassOptionsUI);
+                allDOMElements.classModeBtn.addEventListener('click', showClassOptionsUI);
                 if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
-                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; }
+                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; console.log("FS listener stopped."); }
             }
 
-             // NUEVA FUNCIÓN para mostrar opciones Profe/Alumno
             function showClassOptionsUI() {
-                console.log("Showing Class Options UI (Teacher/Student).");
-                allDOMElements.modeSelector.hidden = true; // Ocultar botones Individual/Clase
-                allDOMElements.classOptions.hidden = false; // Mostrar botones Profe/Alumno
-                // Asignar listeners a los nuevos botones
+                console.log("Showing Class Options UI.");
+                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = false;
+                // Reasignar listeners
                 allDOMElements.teacherOptionBtn.removeEventListener('click', setupTeacherMode);
                 allDOMElements.teacherOptionBtn.addEventListener('click', setupTeacherMode);
                 allDOMElements.studentOptionBtn.removeEventListener('click', showJoinClassSection);
                 allDOMElements.studentOptionBtn.addEventListener('click', showJoinClassSection);
             }
 
-
             function setupIndividualMode() {
                 console.log("Setting up Individual Mode.");
                 currentActivityId = null; currentActivityOwnerId = null;
-                allDOMElements.modeSelector.hidden = true;
-                allDOMElements.classOptions.hidden = true; // Asegurar oculto
-                allDOMElements.mainAppContent.hidden = false;
-                allDOMElements.pdfUploadSection.hidden = false;
-                allDOMElements.pdfPlaceholder.hidden = true;
-                allDOMElements.leaderboardSection.hidden = true;
-                // Reasignar listener de pdfUpload
-                const newPdfUpload = allDOMElements.pdfUpload.cloneNode(true);
-                allDOMElements.pdfUpload.parentNode.replaceChild(newPdfUpload, allDOMElements.pdfUpload);
-                allDOMElements.pdfUpload = newPdfUpload;
-                allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload);
-                allDOMElements.pdfUpload.value = '';
-
-                resetAppState();
-                assignMainAppListeners();
-                listenForLeaderboardUpdates(null);
-                if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = 'Sube tu propio PDF para empezar.';
-                if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo seleccionado.';
+                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = true;
+                allDOMElements.mainAppContent.hidden = false; allDOMElements.pdfUploadSection.hidden = false;
+                allDOMElements.pdfPlaceholder.hidden = true; allDOMElements.leaderboardSection.hidden = true;
+                // Reasignar listener pdfUpload
+                const newUP = allDOMElements.pdfUpload.cloneNode(true); allDOMElements.pdfUpload.parentNode.replaceChild(newUP, allDOMElements.pdfUpload);
+                allDOMElements.pdfUpload = newUP; allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload); allDOMElements.pdfUpload.value = '';
+                resetAppState(); assignMainAppListeners(); listenForLeaderboardUpdates(null);
+                if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = 'Sube tu PDF.';
+                if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo.';
             }
 
             function setupTeacherMode() {
                 console.log("Setting up Teacher Mode UI.");
-                allDOMElements.modeSelector.hidden = true;
-                allDOMElements.classOptions.hidden = true;
-                allDOMElements.joinClassSection.hidden = true;
-                allDOMElements.teacherSetupSection.hidden = false;
-                allDOMElements.createActivityBtn.disabled = true;
-                allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
-                allDOMElements.teacherPdfUpload.value = '';
-                if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
-
+                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = true;
+                allDOMElements.joinClassSection.hidden = true; allDOMElements.teacherSetupSection.hidden = false;
+                allDOMElements.createActivityBtn.disabled = true; allDOMElements.createActivityBtn.textContent = 'Crear Actividad';
+                allDOMElements.teacherPdfUpload.value = ''; if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
                 // Reasignar listeners
-                const newTeacherPdfUpload = allDOMElements.teacherPdfUpload.cloneNode(true);
-                allDOMElements.teacherPdfUpload.parentNode.replaceChild(newTeacherPdfUpload, allDOMElements.teacherPdfUpload);
-                allDOMElements.teacherPdfUpload = newTeacherPdfUpload;
-                allDOMElements.teacherPdfUpload.addEventListener('change', handleTeacherPdfSelect);
-
-                allDOMElements.createActivityBtn.removeEventListener('click', createClassActivity);
-                allDOMElements.createActivityBtn.addEventListener('click', createClassActivity);
+                const newUP = allDOMElements.teacherPdfUpload.cloneNode(true); allDOMElements.teacherPdfUpload.parentNode.replaceChild(newUP, allDOMElements.teacherPdfUpload);
+                allDOMElements.teacherPdfUpload = newUP; allDOMElements.teacherPdfUpload.addEventListener('change', handleTeacherPdfSelect);
+                allDOMElements.createActivityBtn.removeEventListener('click', createClassActivity); allDOMElements.createActivityBtn.addEventListener('click', createClassActivity);
             }
-             function handleTeacherPdfSelect() {
-                 allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload.files.length;
-             }
+            function handleTeacherPdfSelect() { allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload.files.length; }
 
             function showJoinClassSection() {
                 console.log("Showing Join Class UI.");
-                allDOMElements.modeSelector.hidden = true;
-                allDOMElements.classOptions.hidden = true;
-                allDOMElements.teacherSetupSection.hidden = true;
-                allDOMElements.joinClassSection.hidden = false;
-                allDOMElements.activityCodeInput.value = '';
-                allDOMElements.joinActivityBtn.disabled = false;
-                allDOMElements.joinActivityBtn.textContent = 'Unirme a la Actividad';
-                if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
-
-                allDOMElements.joinActivityBtn.removeEventListener('click', joinClassActivity);
-                allDOMElements.joinActivityBtn.addEventListener('click', joinClassActivity);
+                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = true;
+                allDOMElements.teacherSetupSection.hidden = true; allDOMElements.joinClassSection.hidden = false;
+                allDOMElements.activityCodeInput.value = ''; allDOMElements.joinActivityBtn.disabled = false;
+                allDOMElements.joinActivityBtn.textContent = 'Unirme'; if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
+                allDOMElements.joinActivityBtn.removeEventListener('click', joinClassActivity); allDOMElements.joinActivityBtn.addEventListener('click', joinClassActivity);
             }
 
             async function createClassActivity() {
-                 console.log("Attempting to create class activity...");
-                const file = allDOMElements.teacherPdfUpload.files[0];
-                if (!file || file.type !== 'application/pdf') { alert('Selecciona un PDF.'); return; }
-                allDOMElements.createActivityBtn.disabled = true;
-                allDOMElements.createActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Creando...';
+                 console.log("Attempting create activity...");
+                const file = allDOMElements.teacherPdfUpload.files[0]; if (!file || file.type !== 'application/pdf') { alert('Selecciona PDF.'); return; }
+                allDOMElements.createActivityBtn.disabled = true; allDOMElements.createActivityBtn.innerHTML = '<div class="loader"></div> Creando...';
                 showStatusMessage('Procesando PDF...', 'blue');
                 try {
-                    const textContent = await extractPdfText(file);
-                    if (new Blob([textContent]).size > 950000) { throw new Error("PDF demasiado grande (> 1MB)."); }
-
-                    const activityRef = db.collection('activities').doc();
-                    currentActivityId = activityRef.id;
-                    currentActivityOwnerId = userId;
-                    console.log("Generated Activity ID:", currentActivityId);
-
+                    const textContent = await extractPdfText(file); if (new Blob([textContent]).size > 950000) { throw new Error("PDF > 1MB."); }
+                    const activityRef = db.collection('activities').doc(); currentActivityId = activityRef.id; currentActivityOwnerId = userId;
                     await activityRef.set({ ownerId: userId, ownerName: userDisplayName, createdAt: firebase.firestore.FieldValue.serverTimestamp(), sourceText: textContent, fileName: file.name });
-                    console.log("Activity created in Firestore.");
-
-                    allDOMElements.teacherSetupSection.hidden = true;
-                    allDOMElements.activityCodeDisplay.textContent = currentActivityId;
-                    allDOMElements.activityCreatedSection.hidden = false;
-                    showStatusMessage(`Actividad creada. Código: ${currentActivityId}`, 'green');
-
-                    const codeDisplay = allDOMElements.activityCreatedSection.querySelector('.select-all');
-                    if (codeDisplay) { codeDisplay.onclick = null; codeDisplay.addEventListener('click', () => copyToClipboard(currentActivityId)); }
-                    allDOMElements.resetActivityBtn.removeEventListener('click', confirmResetActivity);
-                    allDOMElements.resetActivityBtn.addEventListener('click', confirmResetActivity);
-                    allDOMElements.resetActivityBtn.disabled = false;
-
-                } catch (error) {
-                    console.error("Error creating activity:", error);
-                    alert(`Error: ${error.message}`);
-                    showStatusMessage(`Error: ${error.message}`, 'red');
-                } finally {
-                     if (allDOMElements.teacherSetupSection && !allDOMElements.teacherSetupSection.hidden) {
-                         allDOMElements.createActivityBtn.disabled = false;
-                         allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
-                     }
-                 }
+                    allDOMElements.teacherSetupSection.hidden = true; allDOMElements.activityCodeDisplay.textContent = currentActivityId;
+                    allDOMElements.activityCreatedSection.hidden = false; showStatusMessage(`Creada. Código: ${currentActivityId}`, 'green');
+                    const codeDisp = allDOMElements.activityCreatedSection.querySelector('.select-all'); if (codeDisp) { codeDisp.onclick = null; codeDisp.addEventListener('click', () => copyToClipboard(currentActivityId)); }
+                    allDOMElements.resetActivityBtn.removeEventListener('click', confirmResetActivity); allDOMElements.resetActivityBtn.addEventListener('click', confirmResetActivity); allDOMElements.resetActivityBtn.disabled = false;
+                } catch (error) { console.error("Error creando:", error); alert(`Error: ${error.message}`); showStatusMessage(`Error: ${error.message}`, 'red'); }
+                finally { if (allDOMElements.teacherSetupSection && !allDOMElements.teacherSetupSection.hidden) { allDOMElements.createActivityBtn.disabled = false; allDOMElements.createActivityBtn.textContent = 'Crear Actividad'; } }
             }
-             function copyToClipboard(text) { /* ... (igual) ... */
-                 navigator.clipboard.writeText(text)
-                     .then(() => showStatusMessage('Código copiado', 'green', 2000))
-                     .catch(err => { console.error('Error copy (nav):', err); fallbackCopyTextToClipboard(text); });
-             }
-             function fallbackCopyTextToClipboard(text) { /* ... (igual) ... */
-                const textArea = document.createElement("textarea"); textArea.value = text;
-                textArea.style.position = "fixed"; textArea.style.left = "-9999px"; document.body.appendChild(textArea);
-                textArea.focus(); textArea.select();
-                try { document.execCommand('copy'); showStatusMessage('Código copiado (fallback)', 'green', 2000); }
-                catch (err) { console.error('Error copy (fallback):', err); showStatusMessage('No se pudo copiar', 'yellow', 3000); }
-                document.body.removeChild(textArea);
-             }
-
+             function copyToClipboard(text) { navigator.clipboard.writeText(text).then(() => showStatusMessage('Copiado', 'green', 2000)).catch(err => { console.error('Error copy:', err); fallbackCopyTextToClipboard(text); }); }
+             function fallbackCopyTextToClipboard(text) { const ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.left="-9999px";document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');showStatusMessage('Copiado(fb)', 'green', 2000);}catch(err){console.error('Fb copy err:', err);showStatusMessage('No copiado', 'yellow', 3000);}document.body.removeChild(ta); }
 
             async function joinClassActivity() {
-                console.log("Attempting to join class activity...");
-                const code = allDOMElements.activityCodeInput.value.trim();
-                if (!code) { alert("Introduce el código."); return; }
-                allDOMElements.joinActivityBtn.disabled = true;
-                allDOMElements.joinActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Uniéndose...';
-                showStatusMessage('Buscando actividad...', 'blue');
+                console.log("Attempting join activity...");
+                const code = allDOMElements.activityCodeInput.value.trim(); if (!code) { alert("Introduce código."); return; }
+                allDOMElements.joinActivityBtn.disabled = true; allDOMElements.joinActivityBtn.innerHTML = '<div class="loader"></div> Uniéndose...';
+                showStatusMessage('Buscando...', 'blue');
                 try {
-                    const activityRef = db.doc(`activities/${code}`);
-                    console.log("Fetching activity:", code);
-                    const doc = await activityRef.get();
-                    if (!doc.exists) throw new Error("Código no encontrado.");
-                    const activityData = doc.data();
-                    if (!activityData.sourceText || !activityData.fileName) throw new Error("Actividad incompleta.");
-
-                    currentActivityId = code;
-                    currentActivityOwnerId = activityData.ownerId; // Guardar owner ID para posible reset (aunque alumno no lo usa)
-                    console.log("Activity found. Owner:", currentActivityOwnerId);
-
-                    allDOMElements.joinClassSection.hidden = true;
-                    allDOMElements.modeSelector.hidden = true;
+                    const activityRef = db.doc(`activities/${code}`); console.log("Fetching activity:", code);
+                    const doc = await activityRef.get(); if (!doc.exists) throw new Error("Código no encontrado.");
+                    const d = doc.data(); if (!d.sourceText || !d.fileName) throw new Error("Actividad incompleta.");
+                    currentActivityId = code; currentActivityOwnerId = d.ownerId; console.log("Activity found. Owner:", currentActivityOwnerId);
+                    allDOMElements.joinClassSection.hidden = true; allDOMElements.modeSelector.hidden = true;
                     console.log("Registering user in leaderboard for activity:", currentActivityId);
                     await registerUserInLeaderboard(currentActivityId); // Esperar registro
                     console.log("Setting up class mode UI...");
-                    setupClassModeUI(activityData.sourceText, activityData.fileName);
+                    setupClassModeUI(d.sourceText, d.fileName); // Mostrar UI DESPUÉS de registrar
                     console.log("Join successful.");
-
-                } catch (error) {
-                    console.error("Error joining activity:", error);
-                    showStatusMessage(`Error: ${error.message}`, 'red');
-                    allDOMElements.joinActivityBtn.disabled = false;
-                    allDOMElements.joinActivityBtn.textContent = 'Unirme a la Actividad';
-                }
+                } catch (error) { console.error("Error joining:", error); showStatusMessage(`Error: ${error.message}`, 'red'); allDOMElements.joinActivityBtn.disabled = false; allDOMElements.joinActivityBtn.textContent = 'Unirme'; }
             }
 
              function setupClassModeUI(pdfText, pdfFileName) {
-                 console.log("Setting up Class Mode UI for activity:", currentActivityId);
-                 if (!allDOMElements.mainAppContent) { console.error("Main app content not found!"); return;}
+                 console.log("Setting up Class Mode UI:", currentActivityId);
+                 // Verificar elementos cruciales antes de proceder
+                 if (!allDOMElements.mainAppContent || !allDOMElements.leaderboardSection || !allDOMElements.fileNameDisplay || !allDOMElements.sourceTextDisplay || !allDOMElements.alternativeExplanationBtn ) {
+                     console.error("Missing critical UI elements in setupClassModeUI.");
+                     showFatalError("Error al mostrar la interfaz de la actividad de clase.");
+                     return;
+                 }
 
-                allDOMElements.mainAppContent.hidden = false;
-                allDOMElements.pdfUploadSection.hidden = true;
-                allDOMElements.pdfPlaceholder.hidden = false;
-                allDOMElements.leaderboardSection.hidden = false;
-                resetAppState(); // Limpia estado
-
+                allDOMElements.mainAppContent.hidden = false; allDOMElements.pdfUploadSection.hidden = true;
+                allDOMElements.pdfPlaceholder.hidden = false; allDOMElements.leaderboardSection.hidden = false;
+                resetAppState();
                 currentPDFText = pdfText;
-                allDOMElements.fileNameDisplay.textContent = `Trabajando en: ${pdfFileName} (Actividad: ${currentActivityId})`;
+                allDOMElements.fileNameDisplay.textContent = `Clase: ${pdfFileName} (${currentActivityId})`;
                 allDOMElements.sourceTextDisplay.textContent = currentPDFText;
-                allDOMElements.alternativeExplanationBtn.disabled = false;
+                allDOMElements.alternativeExplanationBtn.disabled = false; // Habilitar ahora que hay texto
 
-                assignMainAppListeners();
-                listenForLeaderboardUpdates(currentActivityId);
+                assignMainAppListeners(); // Asignar listeners AHORA
+                listenForLeaderboardUpdates(currentActivityId); // Iniciar listener específico AHORA
             }
 
             function assignMainAppListeners() {
                  console.log("Assigning main app listeners...");
-                 const elements = ['studentSummary', 'alternativeExplanationBtn', 'geminiEvaluateBtn', 'downloadBtn'];
-                 elements.forEach(key => {
-                     if (!allDOMElements[key]) console.warn(`Element ${key} missing for main listeners.`);
-                 });
-
-                 allDOMElements.studentSummary?.removeEventListener('input', updateWordCount);
-                 allDOMElements.studentSummary?.addEventListener('input', updateWordCount);
-
-                 allDOMElements.alternativeExplanationBtn?.removeEventListener('click', generateAlternativeExplanation);
-                 allDOMElements.alternativeExplanationBtn?.addEventListener('click', generateAlternativeExplanation);
-
-                 allDOMElements.geminiEvaluateBtn?.removeEventListener('click', evaluateReasoning);
-                 allDOMElements.geminiEvaluateBtn?.addEventListener('click', evaluateReasoning);
-
-                 allDOMElements.downloadBtn?.removeEventListener('click', downloadSummaries);
-                 allDOMElements.downloadBtn?.addEventListener('click', downloadSummaries);
+                 const els = ['studentSummary', 'alternativeExplanationBtn', 'geminiEvaluateBtn', 'downloadBtn'];
+                 els.forEach(k => { if (!allDOMElements[k]) console.warn(`Element ${k} missing.`); });
+                 allDOMElements.studentSummary?.removeEventListener('input', updateWordCount); allDOMElements.studentSummary?.addEventListener('input', updateWordCount);
+                 allDOMElements.alternativeExplanationBtn?.removeEventListener('click', generateAlternativeExplanation); allDOMElements.alternativeExplanationBtn?.addEventListener('click', generateAlternativeExplanation);
+                 allDOMElements.geminiEvaluateBtn?.removeEventListener('click', evaluateReasoning); allDOMElements.geminiEvaluateBtn?.addEventListener('click', evaluateReasoning);
+                 allDOMElements.downloadBtn?.removeEventListener('click', downloadSummaries); allDOMElements.downloadBtn?.addEventListener('click', downloadSummaries);
                  console.log("Main app listeners assigned.");
             }
 
             function showStatusMessage(message, color = 'gray', duration = 0) {
-                 if (!allDOMElements.statusMessage) { console.error("statusMessage element not found!"); return; }
+                 if (!allDOMElements.statusMessage) return;
                  console.log(`Status [${color}]: ${message}`);
-                allDOMElements.statusMessage.textContent = message;
-                const colors = { red: 'text-red-600', green: 'text-green-600', blue: 'text-blue-600', yellow: 'text-yellow-600', gray: 'text-gray-600' };
-                allDOMElements.statusMessage.className = `text-center text-sm my-4 ${colors[color] || colors.gray}`;
-                allDOMElements.statusMessage.hidden = false;
-                if (duration > 0) { setTimeout(() => { if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true; }, duration); }
+                 const colors = { red: 'text-red-600', green: 'text-green-600', blue: 'text-blue-600', yellow: 'text-yellow-600', gray: 'text-gray-600' };
+                 allDOMElements.statusMessage.className = `text-center text-sm my-4 ${colors[color] || colors.gray}`;
+                 allDOMElements.statusMessage.textContent = message; allDOMElements.statusMessage.hidden = false;
+                 if (duration > 0) { setTimeout(() => { if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true; }, duration); }
             }
 
-            // --- Funciones de Procesamiento y Lógica ---
+            // --- Funciones Procesamiento y Lógica ---
 
             async function extractPdfText(file) {
                  console.log("Extracting text from PDF:", file.name);
-                 allDOMElements.sourceTextDisplay.innerHTML = '<div class="flex justify-center items-center h-full"><div class="loader mr-2"></div> Extrayendo texto...</div>';
-                 return new Promise(async (resolve, reject) => { // Hacer la función externa async
+                 if(allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.innerHTML = '<div class="flex justify-center items-center h-full"><div class="loader mr-2"></div> Extrayendo texto...</div>';
+                 else console.warn("sourceTextDisplay not found for loader.");
+
+                 return new Promise(async (resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = async (e) => { // Hacer onload async
-                        console.log("PDF file read.");
-                        const typedarray = new Uint8Array(e.target.result);
+                    reader.onload = async (e) => {
+                        console.log("PDF read."); const typedarray = new Uint8Array(e.target.result);
                         try {
-                            // Añadir opción para PDFs protegidos que no permiten extracción
-                            const pdf = await pdfjsLib.getDocument({ data: typedarray, password: '' }).promise;
-                             console.log("PDF document loaded:", pdf.numPages, "pages.");
-
-                             // Verificar permisos de extracción
-                            const permissions = await pdf.getPermissions();
-                            if (permissions && !permissions.includes(pdfjsLib.PermissionFlag.COPY)) {
-                                console.warn("PDF permissions do not allow text extraction.");
-                                // Intentar extraer de todas formas, pdf.js a veces lo permite
-                                // reject(new Error("El PDF no permite la extracción de texto debido a sus permisos."));
-                                // return;
-                            }
-
-
-                            let fullText = "";
+                            const pdf = await pdfjsLib.getDocument({ data: typedarray, password: '' }).promise; console.log("PDF loaded:", pdf.numPages, "pages.");
+                            let fullText = ""; let pageErrors = 0;
                             const pagePromises = [];
                             for (let i = 1; i <= pdf.numPages; i++) {
-                                pagePromises.push(
-                                    // Añadir timeout por página
-                                    Promise.race([
-                                        pdf.getPage(i).then(page => page.getTextContent()),
-                                        new Promise((_, rejectTimeout) => setTimeout(() => rejectTimeout(new Error(`Timeout página ${i}`)), 10000)) // 10s timeout
-                                    ])
-                                    .catch(err => { console.warn(`Error pág ${i}:`, err); return {items:[]}; })
-                                );
+                                pagePromises.push( Promise.race([ pdf.getPage(i).then(p => p.getTextContent()), new Promise((_, rj) => setTimeout(() => rj(new Error(`Timeout pág ${i}`)), 15000)) ]).catch(err => { console.warn(`Err pág ${i}:`, err); pageErrors++; return {items:[]}; }) );
                             }
-                            console.log("Processing pages...");
-                            const results = await Promise.allSettled(pagePromises);
-                            console.log("Pages processed.");
-                            results.forEach((result, index) => {
-                                if (result.status === 'fulfilled' && result.value.items) {
-                                    result.value.items.forEach(item => { fullText += item.str + " "; });
-                                } else {
-                                    console.warn(`Failed to process page ${index + 1}:`, result.reason || 'Unknown error');
-                                    fullText += ` [Error Pág ${index + 1}] `;
-                                }
-                                fullText += "\n\n";
-                            });
-                            console.log("Text extraction complete.");
-                            resolve(fullText.trim());
-                        } catch (error) {
-                             console.error('Error loading PDF document:', error);
-                             let errorMsg = `No se pudo cargar PDF: ${error.message}`;
-                             if (error.name === 'PasswordException') {
-                                 errorMsg = "El PDF está protegido con contraseña y no se puede abrir.";
-                             } else if (error.message.includes("Invalid PDF")) {
-                                 errorMsg = "El archivo no parece ser un PDF válido o está dañado.";
+                            console.log("Processing pages..."); const results = await Promise.allSettled(pagePromises); console.log("Pages processed.");
+                            results.forEach((r, i) => { if (r.status==='fulfilled'&&r.value.items) { r.value.items.forEach(it => { fullText+=it.str+" "; }); } else { fullText+=` [Err Pág ${i+1}] `; } fullText+="\n\n"; });
+                            console.log(`Extraction complete. ${pageErrors} page errors.`);
+                            // Rechazar si no se extrajo texto significativo
+                             if (fullText.trim().length < 10 && pdf.numPages > 0) {
+                                 reject(new Error(pageErrors > 0 ? "Errores al procesar páginas." : "No se extrajo texto (¿solo imágenes?)."));
+                             } else {
+                                resolve(fullText.trim());
                              }
-                             reject(new Error(errorMsg));
-                         }
+                        } catch (error) { console.error('Error PDF load:', error); let msg = `No se pudo cargar: ${error.message}`; if (error.name==='PasswordException'){msg="PDF protegido.";} else if(error.message.includes("Invalid PDF")){msg="PDF inválido.";} reject(new Error(msg)); }
                     };
-                     reader.onerror = (error) => { console.error('Error reading file:', error); reject(new Error("Error al leer archivo.")); };
-                    reader.readAsArrayBuffer(file);
+                    reader.onerror = (error) => { console.error('Error file read:', error); reject(new Error("Error al leer.")); }; reader.readAsArrayBuffer(file);
                 });
             }
 
             async function handlePdfUpload(event) {
                 console.log("handlePdfUpload triggered.");
                 const file = event.target.files[0];
-                if (!file || file.type !== 'application/pdf') { showStatusMessage("Selecciona un PDF.", 'yellow', 3000); event.target.value = ''; return; }
+                if (!file || file.type !== 'application/pdf') { showStatusMessage("Selecciona PDF.", 'yellow', 3000); event.target.value = ''; return; }
                 allDOMElements.fileNameDisplay.textContent = `Cargando: ${file.name}...`;
-                resetAppState(); // Resetear antes de cargar
+                // Resetear solo la parte del contenido
+                 currentPDFText = "";
+                 if(allDOMElements.studentSummary) allDOMElements.studentSummary.value = ""; if(allDOMElements.geminiFeedbackArea) allDOMElements.geminiFeedbackArea.hidden = true;
+                 if(allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
+                 if(allDOMElements.alternativeExplanationBtn) allDOMElements.alternativeExplanationBtn.disabled = true;
+                 if(allDOMElements.geminiEvaluateBtn) allDOMElements.geminiEvaluateBtn.disabled = true; if(allDOMElements.downloadBtn) allDOMElements.downloadBtn.disabled = true;
+                 if(allDOMElements.wordCount) allDOMElements.wordCount.textContent = '0'; if(allDOMElements.summaryTitleInput) allDOMElements.summaryTitleInput.value = "";
+
                 try {
                     currentPDFText = await extractPdfText(file);
-                    // Comprobar si se extrajo algo de texto
-                    if (!currentPDFText || currentPDFText.trim().length < 10) { // Umbral pequeño
-                        throw new Error("No se pudo extraer texto significativo del PDF. Puede que solo contenga imágenes o esté corrupto.");
-                    }
-                    allDOMElements.sourceTextDisplay.textContent = currentPDFText;
+                    // No lanzar error aquí si no hay texto, manejarlo en la UI
+                    allDOMElements.sourceTextDisplay.textContent = currentPDFText.trim().length > 10 ? currentPDFText : "No se pudo extraer texto significativo de este PDF.";
                     allDOMElements.fileNameDisplay.textContent = `Archivo: ${file.name}`;
-                    allDOMElements.alternativeExplanationBtn.disabled = false;
+                    // Habilitar botón solo si hay texto extraído
+                    allDOMElements.alternativeExplanationBtn.disabled = currentPDFText.trim().length < 10;
                     assignMainAppListeners(); // Reasegurar listeners
-                } catch (error) {
-                     console.error('Error processing PDF (individual mode):', error);
-                     allDOMElements.sourceTextDisplay.textContent = `Error: ${error.message}`;
-                     allDOMElements.fileNameDisplay.textContent = 'Error al cargar';
-                     showStatusMessage(`Error: ${error.message}`, 'red');
-                }
+                } catch (error) { console.error('Error PDF individual:', error); allDOMElements.sourceTextDisplay.textContent = `Error: ${error.message}`; allDOMElements.fileNameDisplay.textContent = 'Error'; showStatusMessage(`Error: ${error.message}`, 'red'); }
             }
 
             function resetAppState() {
-                 console.log("Resetting App State...");
-                 currentPDFText = "";
-                 if (allDOMElements.studentSummary) allDOMElements.studentSummary.value = "";
-                 if (allDOMElements.geminiFeedbackArea) allDOMElements.geminiFeedbackArea.hidden = true;
-                 if (allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
-                 if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = currentActivityId ? currentPDFText : 'Selecciona un modo y carga un PDF para empezar.';
-                 if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = currentActivityId ? allDOMElements.fileNameDisplay.textContent : 'Ningún archivo seleccionado.';
-                 if (allDOMElements.alternativeExplanationBtn) allDOMElements.alternativeExplanationBtn.disabled = !currentActivityId;
-                 if (allDOMElements.geminiEvaluateBtn) allDOMElements.geminiEvaluateBtn.disabled = true;
-                 if (allDOMElements.downloadBtn) allDOMElements.downloadBtn.disabled = true;
-                 if (allDOMElements.wordCount) allDOMElements.wordCount.textContent = '0';
-                 if (allDOMElements.summaryTitleInput) allDOMElements.summaryTitleInput.value = "";
-                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; console.log("Firestore listener stopped during reset."); }
+                 console.log("Resetting App State..."); currentPDFText = "";
+                 if(allDOMElements.studentSummary) allDOMElements.studentSummary.value = ""; if(allDOMElements.geminiFeedbackArea) allDOMElements.geminiFeedbackArea.hidden = true;
+                 if(allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
+                 if(allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = 'Selecciona modo y carga PDF.';
+                 if(allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo.';
+                 // Deshabilitar botones que dependen de PDF cargado
+                 if(allDOMElements.alternativeExplanationBtn) allDOMElements.alternativeExplanationBtn.disabled = true;
+                 if(allDOMElements.geminiEvaluateBtn) allDOMElements.geminiEvaluateBtn.disabled = true; if(allDOMElements.downloadBtn) allDOMElements.downloadBtn.disabled = true;
+                 if(allDOMElements.wordCount) allDOMElements.wordCount.textContent = '0'; if(allDOMElements.summaryTitleInput) allDOMElements.summaryTitleInput.value = "";
+                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; console.log("Listener stopped."); }
                  console.log("App State Reset.");
             }
 
+
             function updateWordCount() {
                 if (!allDOMElements.studentSummary || !allDOMElements.wordCount || !allDOMElements.geminiEvaluateBtn || !allDOMElements.downloadBtn) return;
-                const text = allDOMElements.studentSummary.value.trim();
-                const words = text === '' ? 0 : text.split(/\s+/).length;
-                allDOMElements.wordCount.textContent = words;
-                const hasPDFContent = currentPDFText !== "";
-                allDOMElements.geminiEvaluateBtn.disabled = (text === '' || !hasPDFContent);
+                const text = allDOMElements.studentSummary.value.trim(); const words = text === '' ? 0 : text.split(/\s+/).length;
+                allDOMElements.wordCount.textContent = words; const hasPDF = currentPDFText !== "";
+                // Habilitar Evaluar IA solo si hay resumen Y hay texto del PDF cargado
+                allDOMElements.geminiEvaluateBtn.disabled = (text === '' || !hasPDF);
+                // Habilitar Descargar solo si hay resumen
                 allDOMElements.downloadBtn.disabled = (text === '');
             }
+
 
             // --- FUNCIÓN DE RESET ---
             function confirmResetActivity() {
                  console.log("confirmResetActivity called.");
-                 if (!currentActivityId || !userId) { console.error("Missing activityId or userId for reset."); return; }
-                 // Usar currentActivityOwnerId que se guardó al crear/unirse
-                 if (userId !== currentActivityOwnerId) { alert("Error: Solo el creador puede resetear."); return; }
-                 const confirmation = prompt(`¿Borrar TODOS los progresos y resúmenes de la actividad "${currentActivityId}"?\nEscribe BORRAR para confirmar:`);
-                 if (confirmation === "BORRAR") {
-                     console.log("Reset confirmed for activity:", currentActivityId);
-                     resetActivityData();
-                 } else {
-                     console.log("Reset cancelled.");
-                     showStatusMessage("Reseteo cancelado.", "yellow", 3000);
-                 }
+                 if (!currentActivityId || !userId) return; if (userId !== currentActivityOwnerId) { alert("Solo el creador puede resetear."); return; }
+                 const conf = prompt(`¿Borrar TODO de "${currentActivityId}"?\nEscribe BORRAR:`);
+                 if (conf === "BORRAR") { resetActivityData(); } else { showStatusMessage("Reset cancelado.", "yellow", 3000); }
             }
 
             async function resetActivityData() {
                  console.log("Executing resetActivityData...");
-                 if (!currentActivityId || !db || !userId || userId !== currentActivityOwnerId) {
-                      showStatusMessage("Error: No autorizado o falta info.", "red");
-                      return;
-                 }
-                 allDOMElements.resetActivityBtn.disabled = true;
-                 allDOMElements.resetActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Reseteando...';
-                 showStatusMessage(`Borrando datos de ${currentActivityId}...`, 'blue');
-                 const progressCollectionPath = `activities/${currentActivityId}/progress`;
-                 const progressCollectionRef = db.collection(progressCollectionPath);
+                 if (!currentActivityId || !db || !userId || userId !== currentActivityOwnerId) { showStatusMessage("Error: No auth.", "red"); return; }
+                 allDOMElements.resetActivityBtn.disabled = true; allDOMElements.resetActivityBtn.innerHTML = '<div class="loader"></div> Reseteando...';
+                 showStatusMessage(`Borrando ${currentActivityId}...`, 'blue'); const path = `activities/${currentActivityId}/progress`; const ref = db.collection(path);
                  try {
-                     const snapshot = await progressCollectionRef.get();
-                     if (snapshot.empty) { showStatusMessage("No hay datos que borrar.", "green", 3000); return; }
-                     console.log(`Found ${snapshot.size} documents to delete.`);
-                     const batchSize = 100; let deletedCount = 0;
-                     for (let i = 0; i < snapshot.docs.length; i += batchSize) {
-                         const batch = db.batch(); const chunk = snapshot.docs.slice(i, i + batchSize);
-                         chunk.forEach(doc => batch.delete(doc.ref));
-                         await batch.commit(); deletedCount += chunk.length;
-                         console.log(`Batch deleted. Total: ${deletedCount}`);
-                     }
-                     showStatusMessage(`¡Éxito! ${deletedCount} registros borrados.`, "green", 5000);
-                 } catch (error) {
-                     console.error("Error reseteando:", error);
-                     showStatusMessage(`Error al borrar: ${error.message}. Revisa reglas.`, "red");
-                 } finally {
-                     if (allDOMElements.resetActivityBtn) {
-                         allDOMElements.resetActivityBtn.disabled = false;
-                         allDOMElements.resetActivityBtn.textContent = 'Resetear Datos Actividad';
-                     }
-                 }
+                     const snap = await ref.get(); if (snap.empty) { showStatusMessage("Nada que borrar.", "green", 3000); return; }
+                     console.log(`Deleting ${snap.size} docs...`); const batchSize = 100; let deleted = 0;
+                     for (let i = 0; i < snap.docs.length; i += batchSize) { const batch = db.batch(); const chunk = snap.docs.slice(i, i + batchSize); chunk.forEach(d => batch.delete(d.ref)); await batch.commit(); deleted += chunk.length; }
+                     showStatusMessage(`Éxito: ${deleted} regs borrados.`, "green", 5000);
+                 } catch (error) { console.error("Error reseteando:", error); showStatusMessage(`Error: ${error.message}.`, "red"); }
+                 finally { if (allDOMElements.resetActivityBtn) { allDOMElements.resetActivityBtn.disabled = false; allDOMElements.resetActivityBtn.textContent = 'Resetear Datos'; } }
             }
 
             // --- Resto de funciones (IA, Descarga, etc.) ---
             function listenForLeaderboardUpdates(activityId = null) {
                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; }
-                if (!db || !allDOMElements.leaderboardSection || !allDOMElements.leaderboard) return;
+                if (!db || !allDOMElements.leaderboardSection || !allDOMElements.leaderboard) {
+                     console.warn("Cannot setup leaderboard listener: elements missing.");
+                     return; // No continuar si faltan elementos
+                }
                 if (!activityId) { allDOMElements.leaderboardSection.hidden = true; return; }
+
                 allDOMElements.leaderboardSection.hidden = false;
                 allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Cargando...</p>';
-                const collectionPath = `activities/${activityId}/progress`;
-                const progressCollectionRef = db.collection(collectionPath);
-                firestoreListenerUnsubscribe = progressCollectionRef.orderBy("lastActive", "desc").limit(10)
-                 .onSnapshot((snapshot) => {
-                    if (!allDOMElements.leaderboard) return; // Verificar
-                    const users = [];
-                    snapshot.forEach(doc => { if (doc.data().name) users.push({ id: doc.id, name: doc.data().name }); });
-                    allDOMElements.leaderboard.innerHTML = ''; // Limpiar
+                const path = `activities/${activityId}/progress`; const ref = db.collection(path);
+                console.log("Starting leaderboard listener for:", path); // Log inicio listener
+
+                firestoreListenerUnsubscribe = ref.orderBy("lastActive", "desc").limit(10).onSnapshot((snap) => {
+                    // Verificar si el elemento leaderboard aún existe
+                    if (!allDOMElements.leaderboard || !allDOMElements.leaderboard.parentNode) {
+                         console.warn("Leaderboard element detached, stopping listener.");
+                         if (firestoreListenerUnsubscribe) firestoreListenerUnsubscribe();
+                         firestoreListenerUnsubscribe = null;
+                         return;
+                     }
+                    console.log("Leaderboard snapshot received:", snap.size); // Log recepción datos
+                    const users = []; snap.forEach(d => { if (d.data().name) users.push({ id: d.id, name: d.data().name }); });
+                    allDOMElements.leaderboard.innerHTML = ''; // Limpiar siempre
                     if (users.length === 0) { allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Nadie unido aún.</p>'; return; }
-                    allDOMElements.leaderboard.innerHTML = '<ul class="list-disc list-inside space-y-1"></ul>';
-                    const listElement = allDOMElements.leaderboard.querySelector('ul');
-                    users.forEach(p => {
-                        const isCurrentUser = p.id === userId; const li = document.createElement('li');
-                        li.className = `text-sm truncate ${isCurrentUser ? 'font-bold text-blue-600' : 'text-gray-700'}`;
-                        li.textContent = isCurrentUser ? `Tú (${p.name})` : p.name; li.title = p.name; listElement.appendChild(li);
-                    });
+                    allDOMElements.leaderboard.innerHTML = '<ul class="list-disc list-inside space-y-1"></ul>'; const ul = allDOMElements.leaderboard.querySelector('ul');
+                    users.forEach(p => { const isMe = p.id === userId; const li = document.createElement('li'); li.className = `text-sm truncate ${isMe ? 'font-bold text-blue-600' : 'text-gray-700'}`; li.textContent = isMe ? `Tú (${p.name})` : p.name; li.title = p.name; ul.appendChild(li); });
                 }, (error) => {
-                    console.error(`Error leaderboard (${collectionPath}):`, error);
-                    if (allDOMElements.leaderboard) { let msg = "Error progreso."; if (error.code === 'permission-denied') msg = "Error permisos."; else if (error.code === 'unimplemented') msg = "Error red."; allDOMElements.leaderboard.innerHTML = `<p class="text-red-500 text-sm">${msg}</p>`; if (error.code === 'permission-denied' && firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; } }
-                });
+                     console.error(`Error leaderboard (${path}):`, error);
+                     if (allDOMElements.leaderboard) { // Verificar si existe
+                         let m = "Error progreso."; if (error.code === 'permission-denied') m = "Error permisos."; else if (error.code === 'unimplemented') m = "Error red.";
+                         allDOMElements.leaderboard.innerHTML = `<p class="text-red-500 text-sm">${m}</p>`;
+                         // Detener listener si el error es grave y el listener existe
+                         if (error.code === 'permission-denied' && firestoreListenerUnsubscribe) {
+                             firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null;
+                             console.warn("Leaderboard listener stopped due to permission error.");
+                         }
+                     }
+                 });
             }
+
 
             async function registerUserInLeaderboard(activityId = null) {
                  if (!userId || !db || !userDisplayName || !activityId) return Promise.reject(new Error("Faltan datos reg."));
-                 const userProgressRef = db.doc(`activities/${activityId}/progress/${userId}`);
-                 try { await userProgressRef.set({ name: userDisplayName, lastActive: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }); }
-                 catch(e) { console.error("Error registrando:", e); throw new Error(`No se pudo reg.: ${e.message}`); }
+                 const ref = db.doc(`activities/${activityId}/progress/${userId}`);
+                 try {
+                     console.log("Registering user in leaderboard:", {userId, userDisplayName, activityId});
+                     await ref.set({ name: userDisplayName, lastActive: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                     console.log("User registration successful.");
+                } catch(e) { console.error("Error registrando:", e); throw new Error(`No se pudo reg.: ${e.message}`); }
             }
 
             async function callGeminiAPI(prompt, button) {
+                console.log("Calling Gemini API...");
                 const originalHTML = button ? button.innerHTML : ''; const originalTextContent = button ? button.textContent || button.innerText : '';
                 if (button) { button.disabled = true; button.innerHTML = '<div class="loader inline-block mr-2" style="width: 1em; height: 1em; border-width: 2px;"></div>Proc...'; }
-                let resultText = `<span class="text-red-600">Error IA.</span>`; // Default
+                let resultText = `<span class="text-red-600">Error IA.</span>`;
                 try {
                     const API_KEY = ""; const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
                     const safePrompt = prompt.length > 15000 ? prompt.substring(0, 15000) + "\n[...]" : prompt; const payload = { contents: [{ parts: [{ text: safePrompt }] }] };
+                    console.log("Gemini Payload:", JSON.stringify(payload).substring(0, 200) + "..."); // Log
                     let response; let attempts = 0; const maxAttempts = 3; let delay = 1000;
                     while (attempts < maxAttempts) {
                         try {
+                            console.log(`Gemini API Call - Attempt ${attempts + 1}`);
                             response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                            console.log(`Gemini API Response Status: ${response.status}`);
                             if (response.status === 429 || response.status >= 500) { throw new Error(`API status ${response.status}`); }
-                            if (!response.ok) { const txt = await response.text(); throw new Error(`API Err ${response.status}: ${txt.substring(0,100)}`); }
+                            if (!response.ok) { const txt = await response.text(); console.error("API Error Body:", txt); throw new Error(`API Err ${response.status}: ${txt.substring(0,100)}`); }
                             break;
                         } catch (fetchError) { attempts++; if (attempts >= maxAttempts) throw fetchError; console.warn(`Att ${attempts} fail: ${fetchError.message}. Retry ${delay/1000}s...`); await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2; }
                     }
-                    const result = await response.json(); const candidate = result.candidates?.[0];
+                    const result = await response.json(); console.log("Gemini API Result:", JSON.stringify(result).substring(0, 200) + "..."); // Log
+                    const candidate = result.candidates?.[0];
                     if (!candidate) { throw new Error(result.promptFeedback?.blockReason ? `Block: ${result.promptFeedback.blockReason}` : "Resp inválida."); }
                     if (candidate.finishReason && !["STOP", "MAX_TOKENS"].includes(candidate.finishReason)) { throw new Error(`API stop: ${candidate.finishReason}`); }
                     if (candidate?.content?.parts?.[0]?.text) { resultText = candidate.content.parts[0].text.replace(/(\r\n|\r|\n){2,}/g, '\n\n').replace(/\n/g, '<br>'); }
@@ -734,13 +567,19 @@
                      else { throw new Error("No text."); }
                 } catch (error) { console.error("Error Gemini API:", error); resultText = `<span class="text-red-600">Error IA: ${error.message}</span>`; }
                 finally { if (button) { button.disabled = false; button.innerHTML = originalHTML; if (button.innerHTML === '') button.textContent = originalTextContent; } }
+                 console.log("Gemini API call finished.");
                 return resultText;
             }
 
             async function generateAlternativeExplanation() {
-                 // Verificar elementos y estado
-                 if (!currentPDFText || !allDOMElements.alternativeExplanationBtn || !allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) {
-                      console.warn("generateAlternativeExplanation prerequisites missing.");
+                 console.log("generateAlternativeExplanation called.");
+                 // Verificar requisitos
+                 if (!currentPDFText || currentPDFText.trim().length < 10 || !allDOMElements.alternativeExplanationBtn || !allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) {
+                      console.warn("Alt Expl prerequisites missing or PDF text too short.");
+                      showStatusMessage("Carga un PDF con texto primero.", "yellow", 3000);
+                      // Asegurar que la UI esté en estado coherente si se llamó por error
+                      if(allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
+                      if(allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.classList.remove('hidden');
                       return;
                   }
                  const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText;
@@ -749,7 +588,8 @@
                  allDOMElements.alternativeExplanationDisplay.classList.remove('hidden');
                  allDOMElements.sourceTextDisplay.classList.add('hidden');
                  const explanation = await callGeminiAPI(prompt, allDOMElements.alternativeExplanationBtn);
-                 if (!allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) return; // Re-verificar
+                 // Re-verificar elementos antes de actualizar
+                 if (!allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) return;
                  allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Explicación:</h4><div>${explanation}</div><hr class="my-4"><button id="close-alt-explanation" class="text-sm text-blue-600 hover:underline">Cerrar</button>`;
                  const closeBtn = document.getElementById('close-alt-explanation');
                  if(closeBtn){ closeBtn.removeEventListener('click', closeAltExplanation); closeBtn.addEventListener('click', closeAltExplanation); }
@@ -761,51 +601,33 @@
             }
 
             async function evaluateReasoning() {
-                // Verificar elementos y estado
+                console.log("evaluateReasoning called.");
                  if (!currentPDFText || !allDOMElements.studentSummary?.value.trim() || !allDOMElements.geminiEvaluateBtn || !allDOMElements.geminiFeedbackArea) {
-                     console.warn("evaluateReasoning prerequisites missing.");
-                     // Opcional: Deshabilitar botón si estaba habilitado por error
-                     if (allDOMElements.geminiEvaluateBtn) allDOMElements.geminiEvaluateBtn.disabled = true;
+                     console.warn("Eval prerequisites missing.");
                      return;
                  }
                 const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText;
                 const summaryText = allDOMElements.studentSummary.value;
                 const prompt = `Profesor Bachillerato evalúa resumen alumno. Texto: "${textSnippet}". Resumen: "${summaryText}". Evalúa si capta ideas, conecta, feedback constructivo, ánimo, sin nota, saludo cercano.`;
-
-                // Mostrar UI de carga
-                allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Generando Valoración...</h3><div class="loader"></div>`;
+                allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Generando...</h3><div class="loader"></div>`;
                 allDOMElements.geminiFeedbackArea.hidden = false;
-
-                const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn); // Pasar el botón
-
-                // Verificar si el elemento aún existe antes de actualizar
-                if (!allDOMElements.geminiFeedbackArea) return;
+                const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn);
+                if (!allDOMElements.geminiFeedbackArea) return; // Re-check
                 allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Valoración IA</h3><div class="p-4 bg-green-50 border border-green-200 rounded-lg prose prose-custom text-gray-700">${evaluation}</div>`;
             }
 
-
             function downloadSummaries() {
+                 console.log("downloadSummaries called.");
                  if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return;
-                 const summary = allDOMElements.studentSummary.value.trim();
-                 const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF";
+                 const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF";
                  if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; }
                  let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${summary}`;
                  try {
-                     const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
-                     const link = document.createElement('a');
-                     link.href = URL.createObjectURL(blob);
-                     const safeFile = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                     const safeUser = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                     link.download = `resumen_${safeFile.substring(0,20)}_${safeUser.substring(0,10)}.txt`;
-                     document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                     URL.revokeObjectURL(link.href);
-                     showStatusMessage("Descargado.", 'green', 3000);
-                     if (currentActivityId && userId && db) { // Guardar en Firestore (modo clase)
-                         db.doc(`activities/${currentActivityId}/progress/${userId}`)
-                           .set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true })
-                           .catch(e => console.error("Error guardando resumen:", e));
-                     }
-                 } catch (e) { console.error("Error descarga:", e); showStatusMessage(`Error: ${e.message}`, 'red'); }
+                     const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+                     const sf = title.replace(/[^a-z0-9]/gi, '_').toLowerCase(); const su = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase(); link.download = `resumen_${sf.substring(0,20)}_${su.substring(0,10)}.txt`;
+                     document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href); showStatusMessage("Descargado.", 'green', 3000);
+                     if (currentActivityId && userId && db) { db.doc(`activities/${currentActivityId}/progress/${userId}`).set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true }).catch(e => console.error("Err saving summary:", e)); }
+                 } catch (e) { console.error("Err download:", e); showStatusMessage(`Error: ${e.message}`, 'red'); }
             }
 
             // --- INICIAR LA APLICACIÓN ---
@@ -841,11 +663,11 @@
                   <span class="text-xl block mb-2">👥</span> Modo Clase <span class="block text-sm font-normal text-gray-500">(Únete o crea una actividad)</span>
              </button>
          </div>
-         <!-- Contenedor para opciones Profe/Alumno -->
-         <div id="class-options" class="mt-6 flex flex-col md:flex-row justify-center gap-4" hidden>
+         <!-- Contenedor para opciones Profe/Alumno (NUEVO) -->
+         <div id="class-options" class="mt-8 flex flex-col md:flex-row justify-center gap-4" hidden>
              <button id="teacher-option-btn" class="bg-blue-100 text-blue-800 font-semibold py-3 px-6 rounded-lg hover:bg-blue-200">Soy Profesor (Crear Nueva)</button>
              <button id="student-option-btn" class="bg-green-100 text-green-800 font-semibold py-3 px-6 rounded-lg hover:bg-green-200">Soy Alumno (Unirme con Código)</button>
-             <button id="back-from-class-options" class="mt-2 md:mt-0 text-sm text-gray-600 hover:underline">Volver</button> <!-- Botón Volver -->
+             <button id="back-from-class-options" class="mt-4 md:mt-0 text-sm text-gray-600 hover:underline">Volver</button> <!-- Botón Volver -->
          </div>
          <p id="status-message" class="mt-6 text-sm" hidden></p>
     </div>
