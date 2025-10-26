@@ -36,6 +36,7 @@
     <script>
         // --- INICIO: ENVOLTURA DOMCONTENTLOADED ---
         document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM fully loaded and parsed.");
 
             // --- TU CONFIGURACIÓN DE FIREBASE (YA INCLUIDA) ---
             const firebaseConfig = {
@@ -50,8 +51,8 @@
 
             let app, auth, db, userId, userDisplayName;
             let currentPDFText = "";
-            let currentActivityId = null; // ID de la actividad actual (si es modo clase)
-            let currentActivityOwnerId = null; // ID del creador (para verificar reset)
+            let currentActivityId = null;
+            let currentActivityOwnerId = null;
             let allDOMElements = {};
             let firestoreListenerUnsubscribe = null;
             let isAppInitialized = false;
@@ -59,26 +60,36 @@
             // --- INICIALIZACIÓN SECUENCIAL Y ROBUSTA ---
             function initializeApp() {
                 if (isAppInitialized) return;
+                console.log("Initializing App...");
                 try {
                     // 1. Inicializar Firebase
+                    console.log("Initializing Firebase...");
                     if (!firebaseConfig || !firebaseConfig.apiKey) throw new Error("firebaseConfig incompleta.");
                     if (!firebase.apps.length) {
                         app = firebase.initializeApp(firebaseConfig);
+                        console.log("Firebase initialized.");
                     } else {
                         app = firebase.app();
+                        console.log("Firebase app already exists.");
                     }
                     auth = firebase.auth(app);
                     db = firebase.firestore(app);
+                    console.log("Firebase Auth and Firestore services obtained.");
 
                     // 2. Asignar elementos del DOM
+                    console.log("Assigning DOM elements...");
                     assignDOMElements();
+                    console.log("DOM elements assigned.");
 
                     // 3. Configurar listener de autenticación
+                    console.log("Setting up Auth listener...");
                     setupAuthListener();
+                    console.log("Auth listener set up.");
 
                     isAppInitialized = true;
+                    console.log("App Initialization Complete.");
                 } catch (e) {
-                    console.error("Error crítico durante la inicialización:", e);
+                    console.error("CRITICAL ERROR during initialization:", e);
                     showFatalError(`Error fatal durante la inicialización: ${e.message}. Revisa la \`firebaseConfig\` y la conexión a Firebase.`);
                 }
             }
@@ -101,7 +112,7 @@
                          createActivityBtn: document.getElementById('create-activity-btn'),
                          activityCreatedSection: document.getElementById('activity-created-section'),
                          activityCodeDisplay: document.getElementById('activity-code-display'),
-                         resetActivityBtn: document.getElementById('reset-activity-btn'), // Nuevo botón Reset
+                         resetActivityBtn: document.getElementById('reset-activity-btn'),
                          mainAppContent: document.getElementById('main-app-content'),
                          leaderboardSection: document.getElementById('leaderboard-section'),
                          leaderboard: document.getElementById('leaderboard'),
@@ -120,13 +131,18 @@
                          statusMessage: document.getElementById('status-message'),
                          pdfPlaceholder: document.getElementById('pdf-placeholder'),
                      };
-                     if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent) {
-                         throw new Error("Elementos principales del DOM no encontrados.");
-                     }
-                     assignStaticBackButtonListeners(); // Asignar listeners de volver
+                     // Verificar elementos cruciales
+                     const crucialElements = ['loginOverlay', 'modeSelector', 'mainAppContent', 'loginBtn', 'nickInput', 'individualModeBtn', 'classModeBtn'];
+                     crucialElements.forEach(key => {
+                         if (!allDOMElements[key]) {
+                             throw new Error(`Elemento esencial '${key}' no encontrado en el DOM.`);
+                         }
+                     });
+                     assignStaticBackButtonListeners();
                  } catch (domError) {
                       console.error("Error al asignar elementos del DOM:", domError);
-                      showFatalError(`Error interno: Faltan elementos esenciales en la página HTML.`);
+                      // Lanzar el error para que sea capturado por initializeApp
+                      throw domError;
                  }
             }
 
@@ -134,13 +150,13 @@
                 const backButtons = document.querySelectorAll('#join-class-section button.hover\\:underline, #teacher-setup-section button.hover\\:underline, #activity-created-section button.hover\\:underline');
                 backButtons.forEach(button => {
                     button.removeAttribute('onclick');
-                    button.removeEventListener('click', showModeSelector); // Limpiar por si acaso
+                    button.removeEventListener('click', showModeSelector);
                     button.addEventListener('click', showModeSelector);
                 });
                  const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline');
                  if (mainBackButton) {
                      mainBackButton.removeAttribute('onclick');
-                     mainBackButton.removeEventListener('click', () => location.reload()); // Limpiar
+                     mainBackButton.removeEventListener('click', () => location.reload());
                      mainBackButton.addEventListener('click', () => location.reload());
                  }
             }
@@ -148,17 +164,34 @@
             function setupAuthListener() {
                 if (!auth) { showFatalError("Servicio de autenticación no disponible."); return; }
                 auth.onAuthStateChanged(async (user) => {
+                    console.log("Auth state changed. User:", user ? user.uid : 'null');
                     if (!user) {
-                        try { if (!auth.currentUser) await auth.signInAnonymously(); }
-                        catch(e) { handleAuthError(e); }
+                        try {
+                            if (!auth.currentUser) {
+                                console.log("No user, attempting anonymous sign in...");
+                                await auth.signInAnonymously();
+                                console.log("Anonymous sign in successful (listener will re-run).");
+                            }
+                        } catch(e) { handleAuthError(e); }
                     } else {
                         userId = user.uid;
-                        if (!userDisplayName) await loadUserNickAndDecideView();
+                         // Cargar nick y UI solo si no lo hemos hecho ya o si el ID cambió
+                        if (!userDisplayName || userId !== user.uid) {
+                             console.log("User authenticated, loading nick and UI...");
+                             await loadUserNickAndDecideView();
+                        } else {
+                             console.log("User already authenticated and nick loaded.");
+                             // Asegurar que la UI correcta esté visible si ya estaba logueado
+                             if (allDOMElements.modeSelector && allDOMElements.modeSelector.hidden && allDOMElements.mainAppContent && allDOMElements.mainAppContent.hidden) {
+                                  showModeSelector(); // Mostrar selector si nada está visible
+                             }
+                        }
                     }
                 });
             }
 
             function handleAuthError(e) {
+                 console.error("Authentication Error:", e);
                  const configErrorCodes = ['auth/configuration-not-found', 'auth/operation-not-allowed'];
                  if (configErrorCodes.includes(e.code) ) {
                     showFatalError(`<b>Error Fatal de Configuración:</b> El servicio de 'Autenticación Anónima' no está habilitado en tu proyecto de Firebase.<br><br>Ve a Firebase -> Authentication -> Sign-in method -> y habilita 'Anónimo'.`);
@@ -168,6 +201,7 @@
             }
 
             function showFatalError(message) {
+                 console.error("FATAL ERROR:", message);
                  try {
                      document.body.innerHTML = `<div class="text-center p-8 text-red-500">${message}</div>`;
                  } catch (innerError) { /* No hacer nada si falla */ }
@@ -176,25 +210,40 @@
             // --- Funciones de Lógica de UI ---
 
             async function loadUserNickAndDecideView() {
-                if (!userId || !db || !allDOMElements.loginOverlay) { showNickPrompt(); return; }
+                console.log("loadUserNickAndDecideView called.");
+                if (!userId || !db || !allDOMElements.loginOverlay) {
+                     console.warn("loadUserNickAndDecideView: Missing prerequisites. Showing Nick Prompt.");
+                     showNickPrompt();
+                     return;
+                 }
                 const userRef = db.doc(`users/${userId}`);
                 try {
+                    console.log("Loading nick for user:", userId);
                     const doc = await userRef.get();
                     if (doc.exists && doc.data().name) {
                         userDisplayName = doc.data().name;
+                        console.log("Nick found:", userDisplayName, ". Showing Mode Selector.");
                         showModeSelector();
                     } else {
+                        console.log("Nick not found for user:", userId, ". Showing Nick Prompt.");
                         showNickPrompt();
                     }
                 } catch (e) {
-                    console.error("Error cargando nick:", e);
+                    console.error("Error loading nick:", e);
                      if (e.code === 'permission-denied') { showFatalError("Error de permisos al leer datos de usuario. Revisa reglas de Firestore ('users')."); }
-                     else { showNickPrompt(); }
+                     else {
+                         console.warn("Fallback to showing Nick Prompt due to error.");
+                         showNickPrompt();
+                     }
                 }
             }
 
             function showNickPrompt() {
-                if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent || !allDOMElements.loginBtn) return;
+                console.log("Showing Nick Prompt UI.");
+                if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent || !allDOMElements.loginBtn) {
+                     console.error("Missing critical elements in showNickPrompt.");
+                     return;
+                }
                 allDOMElements.loginOverlay.hidden = false;
                 allDOMElements.modeSelector.hidden = true;
                 allDOMElements.mainAppContent.hidden = true;
@@ -207,23 +256,30 @@
             }
 
             async function handleNickSubmit() {
-                 if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return;
+                 console.log("handleNickSubmit called.");
+                 if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) {
+                     console.error("Missing elements or data for handleNickSubmit.");
+                     return;
+                 }
                 const nick = allDOMElements.nickInput.value.trim();
                 if (nick === "") { allDOMElements.nickError.hidden = false; return; }
                 allDOMElements.nickError.hidden = true;
                 userDisplayName = nick;
+                console.log("Nick submitted:", userDisplayName);
                 const userRef = db.doc(`users/${userId}`);
                 try {
                     allDOMElements.loginBtn.disabled = true;
                     allDOMElements.loginBtn.innerHTML = '<div class="loader inline-block"></div> Guardando...';
                     await userRef.set({ name: userDisplayName }, { merge: true });
+                    console.log("Nick saved successfully for user:", userId);
                     allDOMElements.loginOverlay.hidden = true;
                     showModeSelector();
                 } catch (e) {
-                    console.error("Error guardando el nick:", e);
+                    console.error("Error saving nick:", e);
                     alert("Hubo un error al guardar tu nick. Inténtalo de nuevo.");
                 } finally {
-                    if (allDOMElements.loginBtn) { // Verificar si el elemento aún existe
+                    // Verificar si el botón aún existe antes de restaurarlo
+                    if (allDOMElements.loginBtn && allDOMElements.loginBtn.parentNode) {
                         allDOMElements.loginBtn.disabled = false;
                         allDOMElements.loginBtn.textContent = 'Guardar Nick y Continuar';
                     }
@@ -231,18 +287,19 @@
             }
 
             function showModeSelector() {
+                console.log("Showing Mode Selector UI.");
                 if (!allDOMElements.modeSelector) return;
                 allDOMElements.modeSelector.hidden = false;
                 allDOMElements.joinClassSection.hidden = true;
                 allDOMElements.teacherSetupSection.hidden = true;
                 allDOMElements.activityCreatedSection.hidden = true;
                 allDOMElements.mainAppContent.hidden = true;
+                // Asegurar listeners del selector
                 allDOMElements.individualModeBtn.removeEventListener('click', setupIndividualMode);
                 allDOMElements.individualModeBtn.addEventListener('click', setupIndividualMode);
                 allDOMElements.classModeBtn.removeEventListener('click', showClassOptions);
                 allDOMElements.classModeBtn.addEventListener('click', showClassOptions);
                 if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
-                 // Detener listener de Firestore si estaba activo
                  if (firestoreListenerUnsubscribe) {
                     firestoreListenerUnsubscribe();
                     firestoreListenerUnsubscribe = null;
@@ -251,14 +308,15 @@
             }
 
             function setupIndividualMode() {
+                console.log("Setting up Individual Mode.");
                 currentActivityId = null;
-                currentActivityOwnerId = null; // Limpiar owner
+                currentActivityOwnerId = null;
                 allDOMElements.modeSelector.hidden = true;
                 allDOMElements.mainAppContent.hidden = false;
                 allDOMElements.pdfUploadSection.hidden = false;
                 allDOMElements.pdfPlaceholder.hidden = true;
                 allDOMElements.leaderboardSection.hidden = true;
-                // Reasignar listener de pdfUpload de forma segura
+                // Reasignar listener de pdfUpload
                 const newPdfUpload = allDOMElements.pdfUpload.cloneNode(true);
                 allDOMElements.pdfUpload.parentNode.replaceChild(newPdfUpload, allDOMElements.pdfUpload);
                 allDOMElements.pdfUpload = newPdfUpload;
@@ -266,23 +324,28 @@
                 allDOMElements.pdfUpload.value = '';
 
                 resetAppState();
-                assignMainAppListeners(); // Asignar listeners de la app principal
-                listenForLeaderboardUpdates(null); // Asegurar que el listener está detenido
+                assignMainAppListeners();
+                listenForLeaderboardUpdates(null);
+                 // Actualizar texto inicial
+                 if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = 'Sube tu propio PDF para empezar.';
+                 if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo seleccionado.';
             }
 
             function showClassOptions() {
+                 console.log("Showing Class Options prompt.");
                  const isTeacher = confirm("¿Eres el profesor y quieres crear una nueva actividad de clase?");
                  if (isTeacher) setupTeacherMode(); else showJoinClassSection();
             }
 
             function setupTeacherMode() {
+                console.log("Setting up Teacher Mode UI.");
                 allDOMElements.modeSelector.hidden = true;
                 allDOMElements.joinClassSection.hidden = true;
                 allDOMElements.teacherSetupSection.hidden = false;
                 allDOMElements.createActivityBtn.disabled = true;
                 allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
                 allDOMElements.teacherPdfUpload.value = '';
-                if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true; // Ocultar mensajes previos
+                if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
 
                 // Reasignar listeners
                 const newTeacherPdfUpload = allDOMElements.teacherPdfUpload.cloneNode(true);
@@ -298,6 +361,7 @@
              }
 
             function showJoinClassSection() {
+                console.log("Showing Join Class UI.");
                 allDOMElements.modeSelector.hidden = true;
                 allDOMElements.teacherSetupSection.hidden = true;
                 allDOMElements.joinClassSection.hidden = false;
@@ -311,81 +375,65 @@
             }
 
             async function createClassActivity() {
+                 console.log("Attempting to create class activity...");
                 const file = allDOMElements.teacherPdfUpload.files[0];
-                if (!file || file.type !== 'application/pdf') {
-                    alert('Por favor, selecciona un archivo PDF válido.');
-                    return;
-                }
+                if (!file || file.type !== 'application/pdf') { alert('Selecciona un PDF.'); return; }
                 allDOMElements.createActivityBtn.disabled = true;
                 allDOMElements.createActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Creando...';
-                showStatusMessage('Procesando PDF y creando actividad...', 'blue');
+                showStatusMessage('Procesando PDF...', 'blue');
                 try {
                     const textContent = await extractPdfText(file);
                     if (new Blob([textContent]).size > 950000) { throw new Error("PDF demasiado grande (> 1MB)."); }
 
                     const activityRef = db.collection('activities').doc();
                     currentActivityId = activityRef.id;
-                    currentActivityOwnerId = userId; // Guardar owner ID
+                    currentActivityOwnerId = userId;
+                    console.log("Generated Activity ID:", currentActivityId);
 
-                    await activityRef.set({
-                        ownerId: userId, // Guardar ownerId en el documento
-                        ownerName: userDisplayName,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        sourceText: textContent,
-                        fileName: file.name
-                    });
+                    await activityRef.set({ ownerId: userId, ownerName: userDisplayName, createdAt: firebase.firestore.FieldValue.serverTimestamp(), sourceText: textContent, fileName: file.name });
+                    console.log("Activity created in Firestore.");
 
                     allDOMElements.teacherSetupSection.hidden = true;
                     allDOMElements.activityCodeDisplay.textContent = currentActivityId;
                     allDOMElements.activityCreatedSection.hidden = false;
                     showStatusMessage(`Actividad creada. Código: ${currentActivityId}`, 'green');
 
-                    // Listener para copiar código
                     const codeDisplay = allDOMElements.activityCreatedSection.querySelector('.select-all');
-                    if (codeDisplay) {
-                        codeDisplay.onclick = null; // Limpiar anterior
-                        codeDisplay.addEventListener('click', () => copyToClipboard(currentActivityId));
-                    }
-                    // Listener para botón reset
+                    if (codeDisplay) { codeDisplay.onclick = null; codeDisplay.addEventListener('click', () => copyToClipboard(currentActivityId)); }
                     allDOMElements.resetActivityBtn.removeEventListener('click', confirmResetActivity);
                     allDOMElements.resetActivityBtn.addEventListener('click', confirmResetActivity);
-                    allDOMElements.resetActivityBtn.disabled = false; // Habilitar botón reset
+                    allDOMElements.resetActivityBtn.disabled = false;
 
                 } catch (error) {
-                    console.error("Error creando actividad:", error);
+                    console.error("Error creating activity:", error);
                     alert(`Error: ${error.message}`);
                     showStatusMessage(`Error: ${error.message}`, 'red');
-                    allDOMElements.createActivityBtn.disabled = false; // Re-habilitar si falla
-                    allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
-                }
+                } finally {
+                     // Restaurar botón solo si falló la creación y estamos en esa pantalla
+                     if (allDOMElements.teacherSetupSection && !allDOMElements.teacherSetupSection.hidden) {
+                         allDOMElements.createActivityBtn.disabled = false;
+                         allDOMElements.createActivityBtn.textContent = 'Crear Actividad de Clase';
+                     }
+                 }
             }
-             // Función genérica para copiar texto
-             function copyToClipboard(text) {
+
+             function copyToClipboard(text) { /* ... (igual) ... */
                  navigator.clipboard.writeText(text)
                      .then(() => showStatusMessage('Código copiado', 'green', 2000))
-                     .catch(err => {
-                         console.error('Error al copiar (navigator):', err);
-                         fallbackCopyTextToClipboard(text);
-                     });
+                     .catch(err => { console.error('Error copy (nav):', err); fallbackCopyTextToClipboard(text); });
              }
-             function fallbackCopyTextToClipboard(text) { /* ... (igual que antes) ... */
-                const textArea = document.createElement("textarea");
-                textArea.value = text;
-                textArea.style.position = "fixed"; textArea.style.left = "-9999px";
-                document.body.appendChild(textArea);
+             function fallbackCopyTextToClipboard(text) { /* ... (igual) ... */
+                const textArea = document.createElement("textarea"); textArea.value = text;
+                textArea.style.position = "fixed"; textArea.style.left = "-9999px"; document.body.appendChild(textArea);
                 textArea.focus(); textArea.select();
-                try {
-                    document.execCommand('copy');
-                    showStatusMessage('Código copiado (fallback)', 'green', 2000);
-                } catch (err) {
-                    console.error('Error al copiar (fallback):', err);
-                    showStatusMessage('No se pudo copiar el código', 'yellow', 3000);
-                }
+                try { document.execCommand('copy'); showStatusMessage('Código copiado (fallback)', 'green', 2000); }
+                catch (err) { console.error('Error copy (fallback):', err); showStatusMessage('No se pudo copiar', 'yellow', 3000); }
                 document.body.removeChild(textArea);
              }
 
 
             async function joinClassActivity() {
+                console.log("Attempting to join class activity...");
                 const code = allDOMElements.activityCodeInput.value.trim();
                 if (!code) { alert("Introduce el código."); return; }
                 allDOMElements.joinActivityBtn.disabled = true;
@@ -393,19 +441,26 @@
                 showStatusMessage('Buscando actividad...', 'blue');
                 try {
                     const activityRef = db.doc(`activities/${code}`);
+                    console.log("Fetching activity:", code);
                     const doc = await activityRef.get();
                     if (!doc.exists) throw new Error("Código no encontrado.");
                     const activityData = doc.data();
                     if (!activityData.sourceText || !activityData.fileName) throw new Error("Actividad incompleta.");
 
                     currentActivityId = code;
-                    currentActivityOwnerId = activityData.ownerId; // Guardar owner ID
+                    currentActivityOwnerId = activityData.ownerId;
+                    console.log("Activity found. Owner:", currentActivityOwnerId);
+
                     allDOMElements.joinClassSection.hidden = true;
                     allDOMElements.modeSelector.hidden = true;
-                    await registerUserInLeaderboard(currentActivityId);
+                    console.log("Registering user in leaderboard for activity:", currentActivityId);
+                    await registerUserInLeaderboard(currentActivityId); // Esperar registro
+                    console.log("Setting up class mode UI...");
                     setupClassModeUI(activityData.sourceText, activityData.fileName);
+                    console.log("Join successful.");
+
                 } catch (error) {
-                    console.error("Error uniéndose:", error);
+                    console.error("Error joining activity:", error);
                     showStatusMessage(`Error: ${error.message}`, 'red');
                     allDOMElements.joinActivityBtn.disabled = false;
                     allDOMElements.joinActivityBtn.textContent = 'Unirme a la Actividad';
@@ -413,26 +468,29 @@
             }
 
              function setupClassModeUI(pdfText, pdfFileName) {
+                 console.log("Setting up Class Mode UI for activity:", currentActivityId);
                 allDOMElements.mainAppContent.hidden = false;
                 allDOMElements.pdfUploadSection.hidden = true;
                 allDOMElements.pdfPlaceholder.hidden = false;
                 allDOMElements.leaderboardSection.hidden = false;
-                resetAppState(); // Limpia estado, incluyendo listeners antiguos de Firestore
+                resetAppState(); // Limpia estado
 
                 currentPDFText = pdfText;
                 allDOMElements.fileNameDisplay.textContent = `Trabajando en: ${pdfFileName} (Actividad: ${currentActivityId})`;
                 allDOMElements.sourceTextDisplay.textContent = currentPDFText;
-                allDOMElements.alternativeExplanationBtn.disabled = false;
+                allDOMElements.alternativeExplanationBtn.disabled = false; // Habilitar ahora que hay texto
 
-                assignMainAppListeners(); // Asigna listeners de botones de resumen/IA
-                listenForLeaderboardUpdates(currentActivityId); // Inicia listener para ESTA actividad
+                assignMainAppListeners(); // Asigna listeners de resumen/IA
+                listenForLeaderboardUpdates(currentActivityId); // Inicia listener específico
             }
 
             function showStatusMessage(message, color = 'gray', duration = 0) {
-                if (!allDOMElements.statusMessage) return;
+                 // Verificar elemento y mostrar log
+                 if (!allDOMElements.statusMessage) { console.error("statusMessage element not found!"); return; }
+                 console.log(`Status [${color}]: ${message}`);
                 allDOMElements.statusMessage.textContent = message;
                 const colors = { red: 'text-red-600', green: 'text-green-600', blue: 'text-blue-600', yellow: 'text-yellow-600', gray: 'text-gray-600' };
-                allDOMElements.statusMessage.className = `text-center text-sm my-4 ${colors[color] || colors.gray}`; // Asegurar margen
+                allDOMElements.statusMessage.className = `text-center text-sm my-4 ${colors[color] || colors.gray}`;
                 allDOMElements.statusMessage.hidden = false;
                 if (duration > 0) { setTimeout(() => { if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true; }, duration); }
             }
@@ -440,46 +498,56 @@
             // --- Funciones de Procesamiento y Lógica ---
 
             async function extractPdfText(file) {
+                 console.log("Extracting text from PDF:", file.name);
                  allDOMElements.sourceTextDisplay.innerHTML = '<div class="flex justify-center items-center h-full"><div class="loader mr-2"></div> Extrayendo texto...</div>';
                  return new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = async (e) => {
+                        console.log("PDF file read.");
                         const typedarray = new Uint8Array(e.target.result);
                         try {
                             const pdf = await pdfjsLib.getDocument({data: typedarray}).promise;
+                            console.log("PDF document loaded:", pdf.numPages, "pages.");
                             let fullText = "";
                             const pagePromises = [];
                             for (let i = 1; i <= pdf.numPages; i++) {
                                 pagePromises.push( pdf.getPage(i).then(page => page.getTextContent()).catch(err => { console.warn(`Error pág ${i}:`, err); return {items:[]}; }) );
                             }
+                            console.log("Processing pages...");
                             const results = await Promise.allSettled(pagePromises);
-                            results.forEach(result => {
+                            console.log("Pages processed.");
+                            results.forEach((result, index) => {
                                 if (result.status === 'fulfilled' && result.value.items) {
                                     result.value.items.forEach(item => { fullText += item.str + " "; });
-                                } else { fullText += " [Pág Error] "; }
+                                } else {
+                                    console.warn(`Failed to process page ${index + 1}:`, result.reason || 'Unknown error');
+                                    fullText += ` [Error Pág ${index + 1}] `;
+                                }
                                 fullText += "\n\n";
                             });
+                            console.log("Text extraction complete.");
                             resolve(fullText.trim());
-                        } catch (error) { reject(new Error(`No se pudo cargar PDF: ${error.message}`)); }
+                        } catch (error) { console.error('Error loading PDF document:', error); reject(new Error(`No se pudo cargar PDF: ${error.message}`)); }
                     };
-                     reader.onerror = (error) => reject(new Error("Error al leer archivo."));
+                     reader.onerror = (error) => { console.error('Error reading file:', error); reject(new Error("Error al leer archivo.")); };
                     reader.readAsArrayBuffer(file);
                 });
             }
 
             async function handlePdfUpload(event) {
+                console.log("handlePdfUpload triggered.");
                 const file = event.target.files[0];
                 if (!file || file.type !== 'application/pdf') { showStatusMessage("Selecciona un PDF.", 'yellow', 3000); event.target.value = ''; return; }
                 allDOMElements.fileNameDisplay.textContent = `Cargando: ${file.name}...`;
-                resetAppState(); // Resetear antes de cargar
+                resetAppState();
                 try {
                     currentPDFText = await extractPdfText(file);
                     allDOMElements.sourceTextDisplay.textContent = currentPDFText;
                     allDOMElements.fileNameDisplay.textContent = `Archivo: ${file.name}`;
                     allDOMElements.alternativeExplanationBtn.disabled = false;
-                    assignMainAppListeners(); // Asegurar listeners tras reset
+                    assignMainAppListeners(); // Reasegurar listeners
                 } catch (error) {
-                     console.error('Error procesando PDF individual:', error);
+                     console.error('Error processing PDF (individual mode):', error);
                      allDOMElements.sourceTextDisplay.textContent = `Error: ${error.message}`;
                      allDOMElements.fileNameDisplay.textContent = 'Error al cargar';
                      showStatusMessage(`Error: ${error.message}`, 'red');
@@ -487,11 +555,12 @@
             }
 
             function resetAppState() {
+                 console.log("Resetting App State...");
                  currentPDFText = "";
+                 // Verificar cada elemento antes de resetearlo
                  if (allDOMElements.studentSummary) allDOMElements.studentSummary.value = "";
                  if (allDOMElements.geminiFeedbackArea) allDOMElements.geminiFeedbackArea.hidden = true;
                  if (allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden');
-                 // Dejar el texto original si estamos en modo clase, si no, poner mensaje default
                  if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = currentActivityId ? currentPDFText : 'Selecciona un modo y carga un PDF para empezar.';
                  if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = currentActivityId ? allDOMElements.fileNameDisplay.textContent : 'Ningún archivo seleccionado.';
                  if (allDOMElements.alternativeExplanationBtn) allDOMElements.alternativeExplanationBtn.disabled = !currentActivityId; // Habilitar solo si ya hay texto (modo clase)
@@ -499,13 +568,14 @@
                  if (allDOMElements.downloadBtn) allDOMElements.downloadBtn.disabled = true;
                  if (allDOMElements.wordCount) allDOMElements.wordCount.textContent = '0';
                  if (allDOMElements.summaryTitleInput) allDOMElements.summaryTitleInput.value = "";
+                 // Detener listener de Firestore si estaba activo
                  if (firestoreListenerUnsubscribe) {
                     firestoreListenerUnsubscribe();
                     firestoreListenerUnsubscribe = null;
                     console.log("Firestore listener stopped during reset.");
                  }
+                 console.log("App State Reset.");
             }
-
 
             function updateWordCount() {
                 if (!allDOMElements.studentSummary || !allDOMElements.wordCount || !allDOMElements.geminiEvaluateBtn || !allDOMElements.downloadBtn) return;
@@ -515,61 +585,57 @@
                 const hasPDFContent = currentPDFText !== "";
                 allDOMElements.geminiEvaluateBtn.disabled = (text === '' || !hasPDFContent);
                 allDOMElements.downloadBtn.disabled = (text === '');
+                 // Log para depurar estado de botones
+                 // console.log("updateWordCount:", { textLength: text.length, hasPDF: hasPDFContent, geminiDisabled: allDOMElements.geminiEvaluateBtn.disabled, downloadDisabled: allDOMElements.downloadBtn.disabled });
             }
 
-            // --- NUEVA FUNCIÓN DE RESET ---
+            // --- FUNCIÓN DE RESET ---
             function confirmResetActivity() {
-                 if (!currentActivityId || !userId) return;
-
-                 // Verificación básica (cliente): ¿Soy el dueño de esta actividad?
-                 if (userId !== currentActivityOwnerId) {
-                     alert("Error: Solo el creador de la actividad puede resetearla.");
-                     return;
-                 }
-
-                 const confirmation = prompt(`¿Estás seguro de que quieres borrar TODOS los progresos y resúmenes de los alumnos para la actividad "${currentActivityId}"?\n\nEsta acción NO se puede deshacer.\n\nEscribe BORRAR para confirmar:`);
+                 console.log("confirmResetActivity called.");
+                 if (!currentActivityId || !userId) { console.error("Missing activityId or userId for reset."); return; }
+                 if (userId !== currentActivityOwnerId) { alert("Error: Solo el creador puede resetear."); return; }
+                 const confirmation = prompt(`¿Borrar TODOS los progresos y resúmenes de la actividad "${currentActivityId}"?\nEscribe BORRAR para confirmar:`);
                  if (confirmation === "BORRAR") {
+                     console.log("Reset confirmed for activity:", currentActivityId);
                      resetActivityData();
                  } else {
+                     console.log("Reset cancelled.");
                      showStatusMessage("Reseteo cancelado.", "yellow", 3000);
                  }
             }
 
             async function resetActivityData() {
+                 console.log("Executing resetActivityData...");
                  if (!currentActivityId || !db || !userId || userId !== currentActivityOwnerId) {
-                      showStatusMessage("Error: No autorizado o falta información para resetear.", "red");
+                      showStatusMessage("Error: No autorizado o falta info.", "red");
                       return;
                  }
-
                  allDOMElements.resetActivityBtn.disabled = true;
                  allDOMElements.resetActivityBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Reseteando...';
-                 showStatusMessage(`Borrando datos de la actividad ${currentActivityId}...`, 'blue');
-
+                 showStatusMessage(`Borrando datos de ${currentActivityId}...`, 'blue');
                  const progressCollectionPath = `activities/${currentActivityId}/progress`;
                  const progressCollectionRef = db.collection(progressCollectionPath);
-
                  try {
                      const snapshot = await progressCollectionRef.get();
-                     if (snapshot.empty) {
-                         showStatusMessage("No hay datos de progreso que borrar para esta actividad.", "green", 3000);
-                         return;
+                     if (snapshot.empty) { showStatusMessage("No hay datos que borrar.", "green", 3000); return; }
+                     console.log(`Found ${snapshot.size} documents to delete.`);
+                     // Borrar en lotes para evitar problemas de memoria/tiempo
+                     const batchSize = 100;
+                     let deletedCount = 0;
+                     for (let i = 0; i < snapshot.docs.length; i += batchSize) {
+                         const batch = db.batch();
+                         const chunk = snapshot.docs.slice(i, i + batchSize);
+                         console.log(`Deleting batch ${i / batchSize + 1} (${chunk.length} docs)...`);
+                         chunk.forEach(doc => batch.delete(doc.ref));
+                         await batch.commit();
+                         deletedCount += chunk.length;
+                         console.log(`Batch deleted. Total deleted: ${deletedCount}`);
                      }
-
-                     // Usar batch para borrar eficientemente
-                     const batch = db.batch();
-                     snapshot.docs.forEach(doc => {
-                         batch.delete(doc.ref);
-                     });
-
-                     await batch.commit();
-                     showStatusMessage(`¡Éxito! Se han borrado ${snapshot.size} registros de progreso.`, "green", 5000);
-                     // El listener del leaderboard debería actualizarse automáticamente a vacío
-
+                     showStatusMessage(`¡Éxito! ${deletedCount} registros borrados.`, "green", 5000);
                  } catch (error) {
-                     console.error("Error reseteando actividad:", error);
-                     showStatusMessage(`Error al borrar los datos: ${error.message}. Revisa las reglas de Firestore.`, "red");
+                     console.error("Error reseteando:", error);
+                     showStatusMessage(`Error al borrar: ${error.message}. Revisa reglas.`, "red");
                  } finally {
-                     // Reactivar botón incluso si falla
                      if (allDOMElements.resetActivityBtn) {
                          allDOMElements.resetActivityBtn.disabled = false;
                          allDOMElements.resetActivityBtn.textContent = 'Resetear Datos Actividad';
@@ -577,91 +643,64 @@
                  }
             }
 
-
-            // --- Resto de funciones (listenForLeaderboardUpdates, registerUser, callGeminiAPI, etc.) ---
-            // (Incluir aquí las funciones completas y depuradas de la versión anterior)
-            // ... (copiadas y adaptadas abajo)
-
+            // --- Resto de funciones (IA, Descarga, etc.) ---
             function listenForLeaderboardUpdates(activityId = null) {
                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; }
                 if (!db || !allDOMElements.leaderboardSection || !allDOMElements.leaderboard) return;
-
                 if (!activityId) { allDOMElements.leaderboardSection.hidden = true; return; }
-
                 allDOMElements.leaderboardSection.hidden = false;
-                allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Cargando leaderboard...</p>';
-
+                allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Cargando...</p>';
                 const collectionPath = `activities/${activityId}/progress`;
                 const progressCollectionRef = db.collection(collectionPath);
-
                 firestoreListenerUnsubscribe = progressCollectionRef.orderBy("lastActive", "desc").limit(10)
                  .onSnapshot((snapshot) => {
-                    if (!allDOMElements.leaderboard) return; // Verificar si aún existe
+                    if (!allDOMElements.leaderboard) return;
                     const users = [];
                     snapshot.forEach(doc => { if (doc.data().name) users.push({ id: doc.id, name: doc.data().name }); });
-
                     allDOMElements.leaderboard.innerHTML = '';
-                    if (users.length === 0) { allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Nadie se ha unido aún.</p>'; return; }
-
+                    if (users.length === 0) { allDOMElements.leaderboard.innerHTML = '<p class="text-gray-500 text-sm">Nadie unido aún.</p>'; return; }
                     allDOMElements.leaderboard.innerHTML = '<ul class="list-disc list-inside space-y-1"></ul>';
                     const listElement = allDOMElements.leaderboard.querySelector('ul');
                     users.forEach(p => {
-                        const isCurrentUser = p.id === userId;
-                        const listItem = document.createElement('li');
-                        listItem.className = `text-sm truncate ${isCurrentUser ? 'font-bold text-blue-600' : 'text-gray-700'}`;
-                        listItem.textContent = isCurrentUser ? `Tú (${p.name})` : p.name;
-                        listItem.title = p.name;
-                        listElement.appendChild(listItem);
+                        const isCurrentUser = p.id === userId; const li = document.createElement('li');
+                        li.className = `text-sm truncate ${isCurrentUser ? 'font-bold text-blue-600' : 'text-gray-700'}`;
+                        li.textContent = isCurrentUser ? `Tú (${p.name})` : p.name; li.title = p.name; listElement.appendChild(li);
                     });
                 }, (error) => {
                     console.error(`Error leaderboard (${collectionPath}):`, error);
-                    if (allDOMElements.leaderboard) {
-                        let msg = "Error al cargar progreso.";
-                        if (error.code === 'permission-denied') msg = "Error de permisos. Revisa reglas.";
-                        else if (error.code === 'unimplemented') msg = "Problema de red.";
-                        allDOMElements.leaderboard.innerHTML = `<p class="text-red-500 text-sm">${msg}</p>`;
-                        if (error.code === 'permission-denied' && firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; }
-                    }
+                    if (allDOMElements.leaderboard) { let msg = "Error progreso."; if (error.code === 'permission-denied') msg = "Error permisos."; else if (error.code === 'unimplemented') msg = "Error red."; allDOMElements.leaderboard.innerHTML = `<p class="text-red-500 text-sm">${msg}</p>`; if (error.code === 'permission-denied' && firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; } }
                 });
             }
 
             async function registerUserInLeaderboard(activityId = null) {
-                 if (!userId || !db || !userDisplayName || !activityId) return Promise.reject(new Error("Faltan datos para registrar."));
+                 if (!userId || !db || !userDisplayName || !activityId) return Promise.reject(new Error("Faltan datos reg."));
                  const userProgressRef = db.doc(`activities/${activityId}/progress/${userId}`);
-                 try {
-                     await userProgressRef.set({ name: userDisplayName, lastActive: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                 } catch(e) { console.error("Error registrando:", e); throw new Error(`No se pudo registrar: ${e.message}`); }
+                 try { await userProgressRef.set({ name: userDisplayName, lastActive: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }); }
+                 catch(e) { console.error("Error registrando:", e); throw new Error(`No se pudo reg.: ${e.message}`); }
             }
 
             async function callGeminiAPI(prompt, button) {
-                const originalHTML = button ? button.innerHTML : '';
-                const originalTextContent = button ? button.textContent || button.innerText : '';
-                 if (button) { button.disabled = true; button.innerHTML = '<div class="loader inline-block mr-2" style="width: 1em; height: 1em; border-width: 2px;"></div>Procesando...'; }
+                const originalHTML = button ? button.innerHTML : ''; const originalTextContent = button ? button.textContent || button.innerText : '';
+                if (button) { button.disabled = true; button.innerHTML = '<div class="loader inline-block mr-2" style="width: 1em; height: 1em; border-width: 2px;"></div>Proc...'; } // Acortar texto
                 let resultText = `<span class="text-red-600">Error IA.</span>`;
                 try {
-                    const API_KEY = "";
-                    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
-                    const safePrompt = prompt.length > 15000 ? prompt.substring(0, 15000) + "\n[...]" : prompt;
-                    const payload = { contents: [{ parts: [{ text: safePrompt }] }] };
+                    const API_KEY = ""; const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+                    const safePrompt = prompt.length > 15000 ? prompt.substring(0, 15000) + "\n[...]" : prompt; const payload = { contents: [{ parts: [{ text: safePrompt }] }] };
                     let response; let attempts = 0; const maxAttempts = 3; let delay = 1000;
                     while (attempts < maxAttempts) {
                         try {
                             response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                             if (response.status === 429 || response.status >= 500) { throw new Error(`API status ${response.status}`); }
-                            if (!response.ok) { const txt = await response.text(); throw new Error(`API Error ${response.status}: ${txt}`); }
+                            if (!response.ok) { const txt = await response.text(); throw new Error(`API Err ${response.status}: ${txt.substring(0,100)}`); } // Acortar error body
                             break;
-                        } catch (fetchError) {
-                            attempts++; if (attempts >= maxAttempts) throw fetchError;
-                            console.warn(`Attempt ${attempts} failed: ${fetchError.message}. Retrying in ${delay / 1000}s...`);
-                            await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2;
-                        }
+                        } catch (fetchError) { attempts++; if (attempts >= maxAttempts) throw fetchError; console.warn(`Att ${attempts} fail: ${fetchError.message}. Retry ${delay/1000}s...`); await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2; }
                     }
                     const result = await response.json(); const candidate = result.candidates?.[0];
-                    if (!candidate) { throw new Error(result.promptFeedback?.blockReason ? `Bloqueado: ${result.promptFeedback.blockReason}` : "Respuesta inválida API."); }
+                    if (!candidate) { throw new Error(result.promptFeedback?.blockReason ? `Block: ${result.promptFeedback.blockReason}` : "Resp inválida."); }
                     if (candidate.finishReason && !["STOP", "MAX_TOKENS"].includes(candidate.finishReason)) { throw new Error(`API stop: ${candidate.finishReason}`); }
                     if (candidate?.content?.parts?.[0]?.text) { resultText = candidate.content.parts[0].text.replace(/(\r\n|\r|\n){2,}/g, '\n\n').replace(/\n/g, '<br>'); }
-                    else if (candidate.finishReason !== "MAX_TOKENS") { throw new Error("No text received."); }
-                     else { resultText = "(Respuesta truncada por longitud)"; console.warn("MAX_TOKENS without text.");} // Handle MAX_TOKENS without text
+                    else if (candidate.finishReason !== "MAX_TOKENS") { throw new Error("No text."); }
+                     else { resultText = "(Truncado)"; console.warn("MAX_TOKENS without text.");}
                 } catch (error) { console.error("Error Gemini API:", error); resultText = `<span class="text-red-600">Error IA: ${error.message}</span>`; }
                 finally { if (button) { button.disabled = false; button.innerHTML = originalHTML; if (button.innerHTML === '') button.textContent = originalTextContent; } }
                 return resultText;
@@ -755,7 +794,7 @@
                   <span class="text-xl block mb-2">👥</span> Modo Clase <span class="block text-sm font-normal text-gray-500">(Únete o crea una actividad)</span>
              </button>
          </div>
-         <p id="status-message" class="mt-6 text-sm" hidden></p> <!-- Movido aquí para mensajes generales -->
+         <p id="status-message" class="mt-6 text-sm" hidden></p>
     </div>
 
     <!-- Sección para Unirse a Clase -->
