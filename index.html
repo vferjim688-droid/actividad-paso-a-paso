@@ -3,16 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Herramienta de Resumen IA (Profesor/Alumno)</title>
+    <title>Herramienta de Resumen IA v2</title> <!-- Título ligeramente cambiado para diferenciar -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Incluir la librería pdf.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
-    </script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';</script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
         .prose-custom p, .prose-custom li { margin-bottom: 1em; }
@@ -25,20 +22,19 @@
         .btn-danger { background-color: #dc3545; color: white; }
         .btn-danger:hover { background-color: #c82333; }
         .btn-danger:disabled { background-color: #f8d7da; color: #721c24; cursor: not-allowed; }
-        #api-key-section { background-color: #fff; padding: 1.5rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); max-width: 500px; width: 90%; margin: 1rem; }
+        #api-key-section-content { background-color: #fff; padding: 1.5rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); max-width: 500px; width: 90%; margin: 1rem; } /* ID cambiado para evitar conflicto */
     </style>
 
-    <!-- Cargamos Firebase con el método "clásico" (compat) -->
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
 
     <script>
-        // --- INICIO: ENVOLTURA DOMCONTENTLOADED ---
         document.addEventListener('DOMContentLoaded', () => {
-            console.log("DOM fully loaded.");
+            console.log("[INIT] DOM fully loaded.");
 
-            // --- CONFIGURACIÓN FIREBASE ---
+            // --- CONFIG FIREBASE ---
             const firebaseConfig = {
                 apiKey: "AIzaSyBiaYwiczL2M-1jr6G7DAAhRTyF1SXJKRI",
                 authDomain: "resumencomputacionfisica.firebaseapp.com",
@@ -47,173 +43,190 @@
                 messagingSenderId: "411512056489",
                 appId: "1:411512056489:web:75fd8e99317937c38297b8"
             };
-            // -----------------------------
+            // ---------------------
 
             let app, auth, db, userId, userDisplayName;
             let currentPDFText = ""; let currentActivityId = null; let currentActivityOwnerId = null;
-            let allDOMElements = {}; // Objeto global para guardar refs DOM
-            let firestoreListenerUnsubscribe = null; let isAppInitialized = false;
-            const GEMINI_API_KEY_STORAGE_KEY = 'geminiApiKey';
+            let allDOMElements = {}; let firestoreListenerUnsubscribe = null; let isAppInitialized = false;
+            const GEMINI_API_KEY_STORAGE_KEY = 'geminiApiKey_v2'; // Clave ligeramente cambiada
 
-            // --- INICIALIZACIÓN ---
-            function initializeApp() {
-                // CORREGIDO: Ya NO llama a assignDOMElements aquí.
-                if (isAppInitialized) return;
-                console.log("Initializing App core logic...");
-                // allDOMElements ya debería estar poblado por la llamada en DOMContentLoaded
-
-                try {
-                    console.log("Initializing Firebase...");
-                    if (!firebaseConfig?.apiKey) throw new Error("firebaseConfig missing.");
-                    if (!firebase?.apps?.length) { app = firebase.initializeApp(firebaseConfig); } else { app = firebase.app(); }
-                    auth = firebase.auth(app); db = firebase.firestore(app);
-                    console.log("Firebase services OK.");
-
-                    console.log("Setting up Auth listener...");
-                    setupAuthListener(); // Este listener arrancará la UI cuando esté listo
-                    console.log("Auth listener set up.");
-
-                    // Marcar inicialización BÁSICA como completa (Firebase + Listener)
-                    // isAppInitialized = true; // Se marcará dentro de onAuthStateChanged
-                    console.log("Core App Init finished. Waiting for Auth...");
-                } catch (e) { console.error("CRITICAL ERROR init core:", e); showFatalError(`Error inicialización: ${e.message}.`); }
-            }
-
-            // CORREGIDO: Se llama directamente desde DOMContentLoaded y guarda en global
+            // --- PASO 1: ASIGNAR ELEMENTOS DOM ---
             function assignDOMElements() {
-                 console.log("Assigning DOM elements function called.");
+                 console.log("[INIT] Assigning DOM elements...");
                  try {
                      const ids = ['loginOverlay', 'loginBtn', 'nickInput', 'nickError', 'modeSelector', 'individualModeBtn', 'classModeBtn', 'classOptions', 'teacherOptionBtn', 'studentOptionBtn', 'joinClassSection', 'activityCodeInput', 'joinActivityBtn', 'teacherSetupSection', 'teacherPdfUpload', 'createActivityBtn', 'activityCreatedSection', 'activityCodeDisplay', 'resetActivityBtn', 'mainAppContent', 'leaderboardSection', 'leaderboard', 'pdfUploadSection', 'pdfUpload', 'fileNameDisplay', 'sourceTextDisplay', 'textContainer', 'alternativeExplanationBtn', 'studentSummary', 'wordCount', 'geminiEvaluateBtn', 'geminiFeedbackArea', 'downloadBtn', 'summaryTitleInput', 'statusMessage', 'pdfPlaceholder', 'apiKeySection', 'apiKeyInput', 'saveApiKeyBtn', 'showApiKeyBtn', 'backFromApiKeyBtn', 'backFromClassOptions'];
                      let missing = [];
                      ids.forEach(id => {
-                         console.log(`Assigning DOM element: ${id}`); const element = document.getElementById(id);
-                         if (!element) { console.error(`--> Element ID '${id}' NOT FOUND!`); missing.push(id); }
-                         allDOMElements[id] = element; // Asignar al objeto GLOBAL
-                         // console.log(`   Element ${id}:`, element ? 'Found' : 'NULL'); // Opcional: demasiado verbose
+                         const element = document.getElementById(id);
+                         // Solo loguear si falta, para no saturar consola
+                         if (!element) { console.error(`--> [DOM Error] Element ID '${id}' NOT FOUND!`); missing.push(id); }
+                         allDOMElements[id] = element;
                      });
-                     const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'apiKeySection'];
+                     const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'apiKeySection', 'loginBtn', 'nickInput']; // Añadir botones/inputs cruciales
                      const missingCrucial = crucial.filter(k => !allDOMElements[k]);
-                     if (missingCrucial.length > 0) {
-                         // Lanzar error si falta un elemento crucial
-                         throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`);
-                     }
-                     if (missing.length > 0) { console.warn(`Elementos HTML no cruciales faltantes: ${missing.join(', ')}.`); }
-                     // Listeners API Key (se asignan aquí porque estos elementos deben existir)
-                     allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
-                     allDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
-                     console.log("DOM assignment check OK.");
-                     return true; // Indicar éxito
-
-                 } catch (domError) { console.error("Error asignando DOM:", domError); throw domError; } // Re-lanzar error
+                     if (missingCrucial.length > 0) { throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`); }
+                     console.log("[INIT] DOM assignment successful.");
+                     return true; // Éxito
+                 } catch (domError) { console.error("[INIT] Error asignando DOM:", domError); showFatalError(`Error interfaz: ${domError.message}. Revisa HTML.`); return false; } // Indicar fallo
             }
 
-            function assignDynamicBackButtonListeners(sectionId) { /* ... (igual que antes) ... */
-                console.log(`Assigning back button for section: ${sectionId}`); const sectionElement = allDOMElements[sectionId]; if (!sectionElement) { console.error(`Cannot find section ${sectionId} for back button.`); return; } const backButton = sectionElement.querySelector('button.hover\\:underline'); if (backButton) { if (backButton.textContent.toLowerCase().includes('volver') || backButton.textContent.toLowerCase().includes('cancelar')) { backButton.removeEventListener('click', showModeSelector); backButton.addEventListener('click', showModeSelector); console.log(`Back listener assigned for ${sectionId}`); } else { console.warn(`Button in ${sectionId} not 'Back':`, backButton.textContent); } } else { console.warn(`Back button not found in ${sectionId}`); } if (sectionId === 'apiKeySection' && allDOMElements.backFromApiKeyBtn) { allDOMElements.backFromApiKeyBtn.removeEventListener('click', showModeSelector); allDOMElements.backFromApiKeyBtn.addEventListener('click', showModeSelector); } if (sectionId === 'classOptions' && allDOMElements.backFromClassOptions) { allDOMElements.backFromClassOptions.removeEventListener('click', showModeSelector); allDOMElements.backFromClassOptions.addEventListener('click', showModeSelector); } if (sectionId === 'mainAppContent') { const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline'); if (mainBackButton) { mainBackButton.onclick = null; mainBackButton.removeEventListener('click', () => location.reload()); mainBackButton.addEventListener('click', () => location.reload()); console.log("Main app back listener assigned."); } }
+            // --- PASO 2: INICIALIZAR FIREBASE ---
+            function initializeFirebase() {
+                console.log("[INIT] Initializing Firebase...");
+                try {
+                    if (!firebaseConfig?.apiKey) throw new Error("firebaseConfig missing.");
+                    if (!firebase?.apps?.length) { app = firebase.initializeApp(firebaseConfig); } else { app = firebase.app(); }
+                    auth = firebase.auth(app); db = firebase.firestore(app);
+                    console.log("[INIT] Firebase services OK.");
+                    return true; // Éxito
+                } catch (e) { console.error("[INIT] CRITICAL ERROR init Firebase:", e); showFatalError(`Error Firebase: ${e.message}.`); return false; } // Indicar fallo
             }
 
+            // --- PASO 3: CONFIGURAR LISTENER AUTH ---
             function setupAuthListener() {
+                console.log("[INIT] Setting up Auth listener...");
                 if (!auth) { showFatalError("Auth no disponible."); return; }
                 auth.onAuthStateChanged(async (user) => {
-                    console.log("Auth state changed. User:", user ? user.uid : 'null');
+                    console.log("[AUTH] State changed. User:", user ? user.uid : 'null');
                     if (!user) {
                         try { if (!auth.currentUser) await auth.signInAnonymously(); }
                         catch(e) { handleAuthError(e); }
                     } else {
                         userId = user.uid;
-                        // CORREGIDO: Arrancar la UI desde aquí, la primera vez que tenemos usuario
+                        // Arrancar UI/Cargar Nick SOLO si no lo hemos hecho ya
                         if (!isAppInitialized) {
-                             console.log("User detected, DOM ready, Firebase ready. Starting UI setup...");
-                             isAppInitialized = true; // Marcar como inicializado AHORA
-                             await loadUserNickAndDecideView(); // Arrancar flujo UI (esto incluye showModeSelector o showNickPrompt)
-                        } else if (!userDisplayName) {
-                             // Si ya inicializamos pero falta el nick
-                             console.log("App initialized but nick missing, loading nick/UI...");
+                             console.log("[AUTH] User detected. App not yet fully initialized. Loading nick/UI...");
+                             isAppInitialized = true; // Marcar aquí para evitar bucles
                              await loadUserNickAndDecideView();
                         } else {
-                             console.log("User already authenticated and app initialized.");
+                            console.log("[AUTH] User already present or app initialized.");
                         }
                     }
                 });
             }
+
             function handleAuthError(e) { /* ... (igual) ... */ console.error("Auth Error:", e); const cfg = ['auth/configuration-not-found','auth/operation-not-allowed']; if(cfg.includes(e.code)){showFatalError(`<b>Error Config:</b> Auth Anónima no habilitada.`);} else {showFatalError(`Error auth: ${e.message}`);} }
             function showFatalError(message) { /* ... (igual) ... */ console.error("FATAL:", message); try { document.body.innerHTML = `<div class="p-8 text-red-500">${message}</div>`; } catch (e) {} }
 
             // --- Funciones Lógica UI ---
 
-            async function loadUserNickAndDecideView() { /* ... (igual) ... */
-                console.log("loadUserNick:", userId); if (!userId || !db || !allDOMElements.loginOverlay) { console.warn("Prereqs missing loadUserNick. Forcing Nick Prompt."); showNickPrompt(); return; } const ref = db.doc(`users/${userId}`); try { const doc = await ref.get(); if (doc.exists && doc.data().name) { userDisplayName = doc.data().name; showModeSelector(); } else { showNickPrompt(); } } catch (e) { console.error("Err load nick:", e); if (e.code==='permission-denied') { showFatalError("Err perm ('users')."); } else { showNickPrompt(); } }
+            async function loadUserNickAndDecideView() {
+                console.log("[UI] loadUserNick:", userId); if (!userId || !db || !allDOMElements.loginOverlay) { console.warn("Prereqs missing loadUserNick. Forcing Nick Prompt."); showNickPrompt(); return; } const ref = db.doc(`users/${userId}`);
+                try {
+                    const doc = await ref.get();
+                    if (doc.exists && doc.data().name) { userDisplayName = doc.data().name; showModeSelector(); }
+                    else { showNickPrompt(); }
+                } catch (e) { console.error("Err load nick:", e); if (e.code==='permission-denied') { showFatalError("Err perm ('users')."); } else { showNickPrompt(); } }
             }
-            function showNickPrompt() { /* ... (igual) ... */
-                console.log("Showing Nick Prompt."); if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent || !allDOMElements.loginBtn) { console.error("Missing elements for showNickPrompt."); showFatalError("Error UI Nick."); return; }
-                Object.values(allDOMElements).forEach(el => { if(el && el.hidden !== undefined && el !== allDOMElements.loginOverlay) el.hidden = true; }); allDOMElements.loginOverlay.hidden = false;
-                allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit); allDOMElements.loginBtn.addEventListener('click', handleNickSubmit);
-                allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar';
+            function showNickPrompt() {
+                console.log("[UI] Showing Nick Prompt."); if (!allDOMElements.loginOverlay) { showFatalError("Err UI Nick."); return; }
+                hideAllSectionsExcept('loginOverlay');
+                allDOMElements.loginOverlay.hidden = false;
+                // Asegurar listener
+                allDOMElements.loginBtn?.removeEventListener('click', handleNickSubmit); allDOMElements.loginBtn?.addEventListener('click', handleNickSubmit);
+                if(allDOMElements.loginBtn) allDOMElements.loginBtn.disabled = false; if(allDOMElements.loginBtn) allDOMElements.loginBtn.textContent = 'Guardar y Continuar';
                 if(allDOMElements.nickInput) allDOMElements.nickInput.value = ''; if(allDOMElements.nickError) allDOMElements.nickError.hidden = true;
             }
-            async function handleNickSubmit() { /* ... (igual) ... */ console.log("handleNickSubmit."); if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return; const nick = allDOMElements.nickInput.value.trim(); if (nick === "") { allDOMElements.nickError.hidden = false; return; } allDOMElements.nickError.hidden = true; userDisplayName = nick; const ref = db.doc(`users/${userId}`); try { allDOMElements.loginBtn.disabled = true; allDOMElements.loginBtn.innerHTML = '<div class="loader"></div> G...'; await ref.set({ name: userDisplayName }, { merge: true }); allDOMElements.loginOverlay.hidden = true; showModeSelector(); } catch (e) { console.error("Err save nick:", e); alert("Error al guardar."); } finally { if (allDOMElements.loginBtn?.parentNode) { allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar'; } } }
+            async function handleNickSubmit() { /* ... (igual) ... */
+                 console.log("[UI] handleNickSubmit."); if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return; const nick = allDOMElements.nickInput.value.trim(); if (nick === "") { allDOMElements.nickError.hidden = false; return; } allDOMElements.nickError.hidden = true; userDisplayName = nick; const ref = db.doc(`users/${userId}`); try { allDOMElements.loginBtn.disabled = true; allDOMElements.loginBtn.innerHTML = '<div class="loader"></div> G...'; await ref.set({ name: userDisplayName }, { merge: true }); allDOMElements.loginOverlay.hidden = true; showModeSelector(); } catch (e) { console.error("Err save nick:", e); alert("Error al guardar."); } finally { if (allDOMElements.loginBtn?.parentNode) { allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar'; } }
+            }
 
-            function showModeSelector() { /* ... (igual) ... */
-                console.log("Showing Mode Selector."); if (!allDOMElements.modeSelector) return;
-                Object.values(allDOMElements).forEach(el => { if(el && el.hidden !== undefined && el !== allDOMElements.modeSelector) el.hidden = true; });
+            function showModeSelector() {
+                console.log("[UI] Showing Mode Selector."); if (!allDOMElements.modeSelector) return;
+                hideAllSectionsExcept('modeSelector');
                 allDOMElements.modeSelector.hidden = false;
-                allDOMElements.individualModeBtn.removeEventListener('click', setupIndividualMode); allDOMElements.individualModeBtn.addEventListener('click', setupIndividualMode);
-                allDOMElements.classModeBtn.removeEventListener('click', showClassOptionsUI); allDOMElements.classModeBtn.addEventListener('click', showClassOptionsUI);
+                // Reasignar listeners
+                allDOMElements.individualModeBtn?.removeEventListener('click', setupIndividualMode); allDOMElements.individualModeBtn?.addEventListener('click', setupIndividualMode);
+                allDOMElements.classModeBtn?.removeEventListener('click', showClassOptionsUI); allDOMElements.classModeBtn?.addEventListener('click', showClassOptionsUI);
+                // Listener API Key (siempre disponible desde aquí)
+                 allDOMElements.showApiKeyBtn?.removeEventListener('click', showApiKeySection); allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
+
                 if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
                 if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; console.log("FS listener stopped."); }
             }
 
-            function showClassOptionsUI() { /* ... (igual) ... */
-                console.log("Showing Class Options UI."); if (!allDOMElements.modeSelector || !allDOMElements.classOptions || !allDOMElements.teacherOptionBtn || !allDOMElements.studentOptionBtn) { console.error("Missing elements for showClassOptionsUI"); showModeSelector(); return; }
-                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = false;
-                allDOMElements.teacherOptionBtn.removeEventListener('click', setupTeacherMode); allDOMElements.teacherOptionBtn.addEventListener('click', setupTeacherMode);
-                allDOMElements.studentOptionBtn.removeEventListener('click', showJoinClassSection); allDOMElements.studentOptionBtn.addEventListener('click', showJoinClassSection);
+            function showClassOptionsUI() {
+                console.log("[UI] Showing Class Options."); if (!allDOMElements.modeSelector || !allDOMElements.classOptions) { showModeSelector(); return; }
+                hideAllSectionsExcept('classOptions');
+                allDOMElements.classOptions.hidden = false;
+                allDOMElements.teacherOptionBtn?.removeEventListener('click', setupTeacherMode); allDOMElements.teacherOptionBtn?.addEventListener('click', setupTeacherMode);
+                allDOMElements.studentOptionBtn?.removeEventListener('click', showJoinClassSection); allDOMElements.studentOptionBtn?.addEventListener('click', showJoinClassSection);
                  assignDynamicBackButtonListeners('classOptions');
             }
 
-            function setupIndividualMode() { /* ... (igual) ... */
-                console.log("Setting up Individual Mode."); currentActivityId = null; currentActivityOwnerId = null;
-                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = true; allDOMElements.mainAppContent.hidden = false; allDOMElements.pdfUploadSection.hidden = false; allDOMElements.pdfPlaceholder.hidden = true; allDOMElements.leaderboardSection.hidden = true;
-                const newUP = allDOMElements.pdfUpload.cloneNode(true); allDOMElements.pdfUpload.parentNode.replaceChild(newUP, allDOMElements.pdfUpload); allDOMElements.pdfUpload = newUP; allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload); allDOMElements.pdfUpload.value = '';
+            function setupIndividualMode() {
+                console.log("[UI] Setting up Individual Mode."); currentActivityId = null; currentActivityOwnerId = null;
+                hideAllSectionsExcept('mainAppContent');
+                allDOMElements.mainAppContent.hidden = false; allDOMElements.pdfUploadSection.hidden = false;
+                allDOMElements.pdfPlaceholder.hidden = true; allDOMElements.leaderboardSection.hidden = true;
+                // Reasignar listener pdfUpload
+                if (allDOMElements.pdfUpload) {
+                    const newUP = allDOMElements.pdfUpload.cloneNode(true); allDOMElements.pdfUpload.parentNode.replaceChild(newUP, allDOMElements.pdfUpload);
+                    allDOMElements.pdfUpload = newUP; allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload); allDOMElements.pdfUpload.value = '';
+                }
                 resetAppState(); assignMainAppListeners(); listenForLeaderboardUpdates(null);
                 if (allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.textContent = 'Sube tu PDF.';
                 if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo.';
                  assignDynamicBackButtonListeners('mainAppContent');
             }
 
-            function setupTeacherMode() { /* ... (igual) ... */
-                console.log("Setting up Teacher Mode UI."); if (!allDOMElements.modeSelector || !allDOMElements.classOptions || !allDOMElements.joinClassSection || !allDOMElements.teacherSetupSection || !allDOMElements.createActivityBtn || !allDOMElements.teacherPdfUpload) { console.error("Missing elements for setupTeacherMode."); showModeSelector(); return; }
-                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = true; allDOMElements.joinClassSection.hidden = true; allDOMElements.teacherSetupSection.hidden = false;
-                allDOMElements.createActivityBtn.disabled = true; allDOMElements.createActivityBtn.textContent = 'Crear Actividad'; allDOMElements.teacherPdfUpload.value = ''; if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
-                const newUP = allDOMElements.teacherPdfUpload.cloneNode(true); allDOMElements.teacherPdfUpload.parentNode.replaceChild(newUP, allDOMElements.teacherPdfUpload); allDOMElements.teacherPdfUpload = newUP; allDOMElements.teacherPdfUpload.addEventListener('change', handleTeacherPdfSelect);
+            function setupTeacherMode() {
+                console.log("[UI] Setting up Teacher Mode."); if (!allDOMElements.teacherSetupSection) { showModeSelector(); return; }
+                hideAllSectionsExcept('teacherSetupSection');
+                allDOMElements.teacherSetupSection.hidden = false;
+                allDOMElements.createActivityBtn.disabled = true; allDOMElements.createActivityBtn.textContent = 'Crear Actividad';
+                allDOMElements.teacherPdfUpload.value = ''; if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
+                // Reasignar listeners
+                const newUP = allDOMElements.teacherPdfUpload.cloneNode(true); allDOMElements.teacherPdfUpload.parentNode.replaceChild(newUP, allDOMElements.teacherPdfUpload);
+                allDOMElements.teacherPdfUpload = newUP; allDOMElements.teacherPdfUpload.addEventListener('change', handleTeacherPdfSelect);
                 allDOMElements.createActivityBtn.removeEventListener('click', createClassActivity); allDOMElements.createActivityBtn.addEventListener('click', createClassActivity);
                  assignDynamicBackButtonListeners('teacherSetupSection');
             }
-            function handleTeacherPdfSelect() { /* ... (igual) ... */ if (allDOMElements.createActivityBtn) allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload?.files?.length; }
+            function handleTeacherPdfSelect() { if (allDOMElements.createActivityBtn) allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload?.files?.length; }
 
-            function showJoinClassSection() { /* ... (igual) ... */
-                console.log("Showing Join Class UI."); if (!allDOMElements.modeSelector || !allDOMElements.classOptions || !allDOMElements.teacherSetupSection || !allDOMElements.joinClassSection || !allDOMElements.activityCodeInput || !allDOMElements.joinActivityBtn) { console.error("Missing elements for showJoinClassSection."); showModeSelector(); return; }
-                allDOMElements.modeSelector.hidden = true; allDOMElements.classOptions.hidden = true; allDOMElements.teacherSetupSection.hidden = true; allDOMElements.joinClassSection.hidden = false;
-                allDOMElements.activityCodeInput.value = ''; allDOMElements.joinActivityBtn.disabled = false; allDOMElements.joinActivityBtn.textContent = 'Unirme'; if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
+            function showJoinClassSection() {
+                console.log("[UI] Showing Join Class."); if (!allDOMElements.joinClassSection) { showModeSelector(); return; }
+                hideAllSectionsExcept('joinClassSection');
+                allDOMElements.joinClassSection.hidden = false;
+                allDOMElements.activityCodeInput.value = ''; allDOMElements.joinActivityBtn.disabled = false; allDOMElements.joinActivityBtn.textContent = 'Unirme';
+                if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
                 allDOMElements.joinActivityBtn.removeEventListener('click', joinClassActivity); allDOMElements.joinActivityBtn.addEventListener('click', joinClassActivity);
                  assignDynamicBackButtonListeners('joinClassSection');
             }
 
-            // --- Funciones API Key ---
-            function showApiKeySection() { /* ... (igual) ... */
-                console.log("Showing API Key Section."); if (!allDOMElements.apiKeySection) return;
-                Object.values(allDOMElements).forEach(el => { if(el && el.hidden !== undefined && el !== allDOMElements.apiKeySection) el.hidden = true; });
+            function showApiKeySection() {
+                console.log("[UI] Showing API Key Section."); if (!allDOMElements.apiKeySection) return;
+                hideAllSectionsExcept('apiKeySection');
                 allDOMElements.apiKeySection.hidden = false;
                 allDOMElements.apiKeyInput.value = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY) || '';
                  assignDynamicBackButtonListeners('apiKeySection');
             }
+
+            // Helper para ocultar todas las secciones principales
+            function hideAllSectionsExcept(sectionIdToShow) {
+                 console.log(`[UI] Hiding all sections except ${sectionIdToShow}`);
+                 const sectionIds = ['loginOverlay', 'modeSelector', 'classOptions', 'joinClassSection', 'teacherSetupSection', 'activityCreatedSection', 'mainAppContent', 'apiKeySection'];
+                 sectionIds.forEach(id => {
+                     if (allDOMElements[id]) {
+                         allDOMElements[id].hidden = (id !== sectionIdToShow);
+                     } else {
+                          console.warn(`Attempted to hide/show non-existent section: ${id}`);
+                     }
+                 });
+                 // Limpiar mensaje de estado al cambiar de sección principal
+                 if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
+            }
+
+            // --- Funciones API Key ---
             function saveApiKey() { /* ... (igual) ... */ const apiKey = allDOMElements.apiKeyInput.value.trim(); if (apiKey) { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); console.log("API Key saved."); showStatusMessage("Clave guardada.", "green", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } else { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); console.log("API Key removed."); showStatusMessage("Clave eliminada.", "yellow", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } }
 
-            // --- Resto ---
+            // --- Resto de funciones (robustas y sin cambios) ---
             async function createClassActivity() { /* ... (igual) ... */
                  console.log("Attempting create activity..."); const file=allDOMElements.teacherPdfUpload.files[0]; if(!file||file.type!=='application/pdf'){alert('Sel. PDF.'); return;}
                  allDOMElements.createActivityBtn.disabled=true; allDOMElements.createActivityBtn.innerHTML='<div class="loader"></div> Creando...'; showStatusMessage('Procesando PDF...', 'blue');
                  try { const txt=await extractPdfText(file); if(new Blob([txt]).size>950000){throw new Error("PDF>1MB.");} const ref=db.collection('activities').doc(); currentActivityId=ref.id; currentActivityOwnerId=userId; await ref.set({ownerId:userId,ownerName:userDisplayName,createdAt:firebase.firestore.FieldValue.serverTimestamp(),sourceText:txt,fileName:file.name});
-                     allDOMElements.teacherSetupSection.hidden=true; allDOMElements.activityCodeDisplay.textContent=currentActivityId; allDOMElements.activityCreatedSection.hidden=false; showStatusMessage(`Creada: ${currentActivityId}`, 'green');
+                     hideAllSectionsExcept('activityCreatedSection'); // Ocultar otras, mostrar esta
+                     allDOMElements.activityCodeDisplay.textContent=currentActivityId; allDOMElements.activityCreatedSection.hidden=false; showStatusMessage(`Creada: ${currentActivityId}`, 'green');
                      const cd=allDOMElements.activityCreatedSection.querySelector('.select-all'); if(cd){cd.onclick=null; cd.addEventListener('click', ()=>copyToClipboard(currentActivityId));}
                      allDOMElements.resetActivityBtn.removeEventListener('click', confirmResetActivity); allDOMElements.resetActivityBtn.addEventListener('click', confirmResetActivity); allDOMElements.resetActivityBtn.disabled=false;
                      assignDynamicBackButtonListeners('activityCreatedSection');
@@ -231,6 +244,7 @@
             }
             function setupClassModeUI(pdfText, pdfFileName) { /* ... (igual) ... */
                  console.log("Setting up Class UI:", currentActivityId); if (!allDOMElements.mainAppContent || !allDOMElements.leaderboardSection) { console.error("Missing elements Class UI."); showFatalError("Error UI Clase."); return; }
+                 hideAllSectionsExcept('mainAppContent'); // Ocultar todo lo demás
                 allDOMElements.mainAppContent.hidden = false; allDOMElements.pdfUploadSection.hidden = true; allDOMElements.pdfPlaceholder.hidden = false; allDOMElements.leaderboardSection.hidden = false;
                 resetAppState(); currentPDFText = pdfText; allDOMElements.fileNameDisplay.textContent = `Clase: ${pdfFileName} (${currentActivityId})`; allDOMElements.sourceTextDisplay.textContent = currentPDFText; allDOMElements.alternativeExplanationBtn.disabled = false;
                 assignMainAppListeners(); listenForLeaderboardUpdates(currentActivityId);
@@ -272,15 +286,14 @@
             function downloadSummaries() { /* ... (igual) ... */ console.log("downloadSummaries."); if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return; const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF"; if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; } let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${summary}`; try { const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); const sf = title.replace(/[^a-z0-9]/gi, '_').toLowerCase(); const su = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase(); link.download = `resumen_${sf.substring(0,20)}_${su.substring(0,10)}.txt`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href); showStatusMessage("Descargado.", 'green', 3000); if (currentActivityId && userId && db) { db.doc(`activities/${currentActivityId}/progress/${userId}`).set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true }).catch(e => console.error("Err saving summary:", e)); } } catch (e) { console.error("Err download:", e); showStatusMessage(`Error: ${e.message}`, 'red'); } }
 
             // --- INICIAR LA APLICACIÓN ---
-            // CORREGIDO: Llamar a assignDOMElements PRIMERO y LUEGO initializeApp si tiene éxito
+            // CORREGIDO: Llamar a assignDOMElements PRIMERO desde DOMContentLoaded
             try {
                 if (assignDOMElements()) { // Si la asignación fue exitosa
                      initializeApp(); // Inicializar Firebase y listeners
-                } else {
-                     // assignDOMElements ya habrá lanzado un error si faltan cruciales
-                     throw new Error("La asignación inicial falló.");
                 }
+                // El error ya se maneja dentro de assignDOMElements si falla
             } catch(initDomError) {
+                 // Captura por si acaso assignDOMElements lanza un error inesperado aquí
                  console.error("CRITICAL ERROR during initial DOM assignment:", initDomError);
                  showFatalError(`Error interfaz: ${initDomError.message}. Revisa HTML.`);
             }
