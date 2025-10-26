@@ -51,16 +51,16 @@
 
             let app, auth, db, userId, userDisplayName;
             let currentPDFText = ""; let currentActivityId = null; let currentActivityOwnerId = null;
-            let allDOMElements = {}; // Objeto para guardar referencias a elementos del DOM
+            let allDOMElements = {}; // Objeto global para guardar refs DOM
             let firestoreListenerUnsubscribe = null; let isAppInitialized = false;
             const GEMINI_API_KEY_STORAGE_KEY = 'geminiApiKey';
 
             // --- INICIALIZACIÓN ---
-            // CORREGIDO: initializeApp ahora recibe los elementos del DOM
-            function initializeApp(domElements) {
+            function initializeApp() {
+                // Ya no llama a assignDOMElements aquí
                 if (isAppInitialized) return;
                 console.log("Initializing App core logic...");
-                allDOMElements = domElements; // Usar los elementos ya encontrados
+                // allDOMElements ya debería estar poblado por la llamada en DOMContentLoaded
 
                 try {
                     console.log("Initializing Firebase...");
@@ -69,7 +69,6 @@
                     auth = firebase.auth(app); db = firebase.firestore(app);
                     console.log("Firebase services OK.");
 
-                    // Listener de auth se configura DESPUÉS de tener Firebase listo
                     console.log("Setting up Auth listener...");
                     setupAuthListener();
                     console.log("Auth listener set up.");
@@ -78,36 +77,34 @@
                 } catch (e) { console.error("CRITICAL ERROR init core:", e); showFatalError(`Error inicialización: ${e.message}.`); }
             }
 
-            // CORREGIDO: assignDOMElements se llama directamente desde DOMContentLoaded
+            // CORREGIDO: assignDOMElements se llama directamente desde DOMContentLoaded y guarda en global
             function assignDOMElements() {
                  console.log("Assigning DOM elements function called.");
-                 let localDOMElements = {}; // Usar objeto local para evitar modificar global antes de tiempo
                  try {
                      const ids = ['loginOverlay', 'loginBtn', 'nickInput', 'nickError', 'modeSelector', 'individualModeBtn', 'classModeBtn', 'classOptions', 'teacherOptionBtn', 'studentOptionBtn', 'joinClassSection', 'activityCodeInput', 'joinActivityBtn', 'teacherSetupSection', 'teacherPdfUpload', 'createActivityBtn', 'activityCreatedSection', 'activityCodeDisplay', 'resetActivityBtn', 'mainAppContent', 'leaderboardSection', 'leaderboard', 'pdfUploadSection', 'pdfUpload', 'fileNameDisplay', 'sourceTextDisplay', 'textContainer', 'alternativeExplanationBtn', 'studentSummary', 'wordCount', 'geminiEvaluateBtn', 'geminiFeedbackArea', 'downloadBtn', 'summaryTitleInput', 'statusMessage', 'pdfPlaceholder', 'apiKeySection', 'apiKeyInput', 'saveApiKeyBtn', 'showApiKeyBtn', 'backFromApiKeyBtn', 'backFromClassOptions'];
                      let missing = [];
                      ids.forEach(id => {
                          console.log(`Assigning DOM element: ${id}`); const element = document.getElementById(id);
                          if (!element) { console.error(`--> Element ID '${id}' NOT FOUND!`); missing.push(id); }
-                         localDOMElements[id] = element; // Asignar al objeto local
+                         allDOMElements[id] = element; // Asignar al objeto GLOBAL
                          console.log(`   Element ${id}:`, element ? 'Found' : 'NULL');
                      });
                      const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'apiKeySection'];
-                     const missingCrucial = crucial.filter(k => !localDOMElements[k]);
-                     if (missingCrucial.length > 0) { throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`); }
+                     const missingCrucial = crucial.filter(k => !allDOMElements[k]);
+                     if (missingCrucial.length > 0) {
+                         // Lanzar error si falta un elemento crucial
+                         throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`);
+                     }
                      if (missing.length > 0) { console.warn(`Elementos HTML no cruciales faltantes: ${missing.join(', ')}.`); }
-
-                     // Asignar listeners API Key inmediatamente
-                     localDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
-                     localDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
-                     // Los listeners de volver se asignarán dinámicamente
-
+                     // Listeners API Key (se asignan aquí porque estos elementos deben existir)
+                     allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
+                     allDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
                      console.log("DOM assignment check OK.");
-                     return localDOMElements; // Devolver el objeto con los elementos encontrados
+                     return true; // Indicar éxito
 
                  } catch (domError) { console.error("Error asignando DOM:", domError); throw domError; } // Re-lanzar error
             }
 
-            // CORREGIDO: Se llama cuando se muestra la sección correspondiente
             function assignDynamicBackButtonListeners(sectionId) {
                 console.log(`Assigning back button for section: ${sectionId}`);
                 const sectionElement = allDOMElements[sectionId];
@@ -264,10 +261,22 @@
             async function evaluateReasoning() { /* ... (igual) ... */ console.log("evaluateReasoning."); if (!currentPDFText || !allDOMElements.studentSummary?.value.trim() || !allDOMElements.geminiEvaluateBtn || !allDOMElements.geminiFeedbackArea) { console.warn("Eval prereqs missing."); return; } const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText; const summaryText = allDOMElements.studentSummary.value; const prompt = `Profesor Bachillerato evalúa resumen alumno. Texto: "${textSnippet}". Resumen: "${summaryText}". Evalúa si capta ideas, conecta, feedback constructivo, ánimo, sin nota, saludo cercano.`; allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Generando...</h3><div class="loader"></div>`; allDOMElements.geminiFeedbackArea.hidden = false; const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn); if (!allDOMElements.geminiFeedbackArea) return; allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Valoración IA</h3><div class="p-4 bg-green-50 border border-green-200 rounded-lg prose prose-custom text-gray-700">${evaluation}</div>`; }
             function downloadSummaries() { /* ... (igual) ... */ console.log("downloadSummaries."); if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return; const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF"; if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; } let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${summary}`; try { const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); const sf = title.replace(/[^a-z0-9]/gi, '_').toLowerCase(); const su = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase(); link.download = `resumen_${sf.substring(0,20)}_${su.substring(0,10)}.txt`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href); showStatusMessage("Descargado.", 'green', 3000); if (currentActivityId && userId && db) { db.doc(`activities/${currentActivityId}/progress/${userId}`).set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true }).catch(e => console.error("Err saving summary:", e)); } } catch (e) { console.error("Err download:", e); showStatusMessage(`Error: ${e.message}`, 'red'); } }
 
-            // --- INICIAR LA APLICACIÓN (con retraso) ---
-             console.log("DOM ready. Delaying app initialization slightly...");
-             // CORREGIDO: Llamar a initializeApp con un pequeño retraso
-             setTimeout(initializeApp, 50);
+            // --- INICIAR LA APLICACIÓN ---
+            // CORREGIDO: Llamar a assignDOMElements PRIMERO, luego initializeApp
+            try {
+                const domElements = assignDOMElements(); // Obtener elementos
+                // Solo inicializar si la asignación fue exitosa
+                if (domElements && Object.keys(domElements).length > 0) {
+                     // Usar setTimeout para asegurar que el navegador "respira"
+                     setTimeout(() => initializeApp(domElements), 0);
+                } else {
+                     throw new Error("La asignación inicial de elementos del DOM falló.");
+                }
+            } catch(initDomError) {
+                 console.error("CRITICAL ERROR during initial DOM assignment:", initDomError);
+                 showFatalError(`Error interfaz: ${initDomError.message}. Revisa HTML.`);
+            }
+
 
         }); // --- FIN: DOMCONTENTLOADED ---
     </script>
