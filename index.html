@@ -56,39 +56,58 @@
 
             // --- INICIALIZACIÓN ---
             function initializeApp() {
+                // CORREGIDO: Llamar a assignDOMElements PRIMERO
+                console.log("Assigning DOM elements...");
+                try {
+                    assignDOMElements(); // Lanza error si falla
+                    console.log("DOM elements assigned successfully.");
+                } catch (e) {
+                     console.error("CRITICAL ERROR assigning DOM:", e);
+                     showFatalError(`Error asignando interfaz: ${e.message}. Revisa el HTML.`);
+                     return; // No continuar si falla la asignación
+                }
+
                 if (isAppInitialized) return;
-                console.log("Initializing App...");
+                console.log("Initializing App core logic...");
                 try {
                     console.log("Initializing Firebase...");
                     if (!firebaseConfig?.apiKey) throw new Error("firebaseConfig missing.");
                     if (!firebase?.apps?.length) { app = firebase.initializeApp(firebaseConfig); } else { app = firebase.app(); }
                     auth = firebase.auth(app); db = firebase.firestore(app);
                     console.log("Firebase services OK.");
-                    console.log("Assigning DOM elements...");
-                    assignDOMElements(); // Lanza error si falla
-                    console.log("DOM elements assigned.");
+
                     console.log("Setting up Auth listener...");
                     setupAuthListener();
                     console.log("Auth listener set up.");
+
                     isAppInitialized = true; console.log("App Init Complete.");
-                } catch (e) { console.error("CRITICAL ERROR init:", e); showFatalError(`Error inicialización: ${e.message}.`); }
+                } catch (e) { console.error("CRITICAL ERROR init core:", e); showFatalError(`Error inicialización: ${e.message}.`); }
             }
 
             function assignDOMElements() {
-                 console.log("Assigning DOM elements...");
+                 console.log("Assigning DOM elements function called.");
                  try {
                      const ids = ['loginOverlay', 'loginBtn', 'nickInput', 'nickError', 'modeSelector', 'individualModeBtn', 'classModeBtn', 'classOptions', 'teacherOptionBtn', 'studentOptionBtn', 'joinClassSection', 'activityCodeInput', 'joinActivityBtn', 'teacherSetupSection', 'teacherPdfUpload', 'createActivityBtn', 'activityCreatedSection', 'activityCodeDisplay', 'resetActivityBtn', 'mainAppContent', 'leaderboardSection', 'leaderboard', 'pdfUploadSection', 'pdfUpload', 'fileNameDisplay', 'sourceTextDisplay', 'textContainer', 'alternativeExplanationBtn', 'studentSummary', 'wordCount', 'geminiEvaluateBtn', 'geminiFeedbackArea', 'downloadBtn', 'summaryTitleInput', 'statusMessage', 'pdfPlaceholder', 'apiKeySection', 'apiKeyInput', 'saveApiKeyBtn', 'showApiKeyBtn', 'backFromApiKeyBtn', 'backFromClassOptions'];
                      let missing = [];
                      ids.forEach(id => {
+                         // Log ANTES de intentar obtener el elemento
+                         console.log(`Assigning DOM element: ${id}`);
                          const element = document.getElementById(id);
-                         if (!element) { console.warn(`Element ID '${id}' NOT FOUND!`); missing.push(id); } // Warn en lugar de error
+                         if (!element) {
+                             console.error(`--> Element ID '${id}' NOT FOUND!`); // Error específico
+                             missing.push(id);
+                         }
                          allDOMElements[id] = element;
+                         // Log DESPUÉS para confirmar si es null o no
+                         console.log(`   Element ${id}:`, element ? 'Found' : 'NULL');
                      });
-                     const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'apiKeySection'];
+                     const crucial = ['loginOverlay', 'modeSelector', 'mainAppContent', 'apiKeySection']; // Elementos sin los cuales la app NO puede funcionar
                      const missingCrucial = crucial.filter(k => !allDOMElements[k]);
-                     if (missingCrucial.length > 0) { throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`); }
+                     if (missingCrucial.length > 0) {
+                         throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`);
+                     }
                      if (missing.length > 0) { console.warn(`Elementos HTML no cruciales faltantes: ${missing.join(', ')}.`); }
-                     // Listeners API Key (se asignan aquí porque estos elementos siempre existen)
+                     // Listeners API Key (estos elementos deben existir)
                      allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
                      allDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
                      allDOMElements.backFromApiKeyBtn?.addEventListener('click', () => { if (allDOMElements.apiKeySection) allDOMElements.apiKeySection.hidden = true; showModeSelector(); });
@@ -96,42 +115,37 @@
                  } catch (domError) { console.error("Error asignando DOM:", domError); throw domError; }
             }
 
-             // CORREGIDO: Llamar a esta función DESPUÉS de mostrar la sección correspondiente
+            // CORREGIDO: Ya no se llama aquí, se llama cuando se muestra cada sección
+            // function assignStaticBackButtonListeners() { ... }
+
+            // CORREGIDO: Se llama cuando se muestra la sección correspondiente
             function assignDynamicBackButtonListeners(sectionId) {
-                console.log(`Assigning back button listener for section: ${sectionId}`);
-                const sectionElement = allDOMElements[sectionId]; // Obtener el div de la sección
-                if (!sectionElement) {
-                    console.error(`Cannot find section element with ID ${sectionId} to assign back button listener.`);
-                    return;
-                }
-                 // Buscar el botón 'Volver' DENTRO de esa sección
+                console.log(`Assigning back button for section: ${sectionId}`);
+                const sectionElement = allDOMElements[sectionId];
+                if (!sectionElement) { console.error(`Cannot find section ${sectionId} for back button.`); return; }
                 const backButton = sectionElement.querySelector('button.hover\\:underline');
                 if (backButton) {
-                     // Limpiar listener anterior y asignar el nuevo
-                    backButton.removeEventListener('click', showModeSelector);
-                    backButton.addEventListener('click', showModeSelector);
-                    console.log(`Back button listener assigned for ${sectionId}`);
-                } else {
-                    console.warn(`Back button not found within section ${sectionId}`);
-                }
-                 // Asignar listener de volver de API Key si esa es la sección
+                     backButton.removeEventListener('click', showModeSelector); // Limpiar
+                     backButton.addEventListener('click', showModeSelector); // Asignar
+                    console.log(`Back listener assigned for ${sectionId}`);
+                } else { console.warn(`Back button not found in ${sectionId}`); }
+
+                 // Listener volver API Key (caso especial)
                  if (sectionId === 'apiKeySection' && allDOMElements.backFromApiKeyBtn) {
-                     allDOMElements.backFromApiKeyBtn.removeEventListener('click', showModeSelector); // Limpiar por si acaso
+                     allDOMElements.backFromApiKeyBtn.removeEventListener('click', showModeSelector);
                      allDOMElements.backFromApiKeyBtn.addEventListener('click', showModeSelector);
                  }
-                 // Asignar listener de volver de Opciones de Clase
+                  // Listener volver Opciones Clase (caso especial)
                  if (sectionId === 'classOptions' && allDOMElements.backFromClassOptions) {
                       allDOMElements.backFromClassOptions.removeEventListener('click', showModeSelector);
                       allDOMElements.backFromClassOptions.addEventListener('click', showModeSelector);
                  }
-                  // Asignar listener de salir/recargar de la app principal
+                  // Listener salir/recargar App Principal (caso especial)
                  if (sectionId === 'mainAppContent') {
                     const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline');
                     if (mainBackButton) {
-                        mainBackButton.onclick = null; // Limpiar onclick si existiera
-                        mainBackButton.removeEventListener('click', () => location.reload()); // Limpiar
-                        mainBackButton.addEventListener('click', () => location.reload()); // Recargar para volver al inicio
-                        console.log("Main app back button listener assigned.");
+                        mainBackButton.onclick = null; mainBackButton.removeEventListener('click', () => location.reload()); mainBackButton.addEventListener('click', () => location.reload());
+                        console.log("Main app back listener assigned.");
                     }
                  }
             }
@@ -139,25 +153,27 @@
 
             function setupAuthListener() { /* ... (igual) ... */
                 if (!auth) { showFatalError("Auth no disponible."); return; }
-                auth.onAuthStateChanged(async (user) => { console.log("Auth state changed. User:", user ? user.uid : 'null'); if (!user) { try { if (!auth.currentUser) await auth.signInAnonymously(); } catch(e) { handleAuthError(e); } } else { userId = user.uid; if (!userDisplayName) await loadUserNickAndDecideView(); else if (allDOMElements.modeSelector?.hidden && allDOMElements.mainAppContent?.hidden && allDOMElements.apiKeySection?.hidden) { showModeSelector(); } } });
+                auth.onAuthStateChanged(async (user) => { console.log("Auth state changed. User:", user ? user.uid : 'null'); if (!user) { try { if (!auth.currentUser) await auth.signInAnonymously(); } catch(e) { handleAuthError(e); } } else { userId = user.uid; if (!userDisplayName) { console.log("User detected, loading nick/UI..."); await loadUserNickAndDecideView(); } else if (allDOMElements.modeSelector?.hidden && allDOMElements.mainAppContent?.hidden && allDOMElements.apiKeySection?.hidden) { console.log("Auth OK, UI hidden. Showing mode selector."); showModeSelector(); } else { console.log("User already authenticated and nick loaded."); } } });
             }
             function handleAuthError(e) { /* ... (igual) ... */ console.error("Auth Error:", e); const cfg = ['auth/configuration-not-found','auth/operation-not-allowed']; if(cfg.includes(e.code)){showFatalError(`<b>Error Config:</b> Auth Anónima no habilitada.`);} else {showFatalError(`Error auth: ${e.message}`);} }
             function showFatalError(message) { /* ... (igual) ... */ console.error("FATAL:", message); try { document.body.innerHTML = `<div class="p-8 text-red-500">${message}</div>`; } catch (e) {} }
 
             // --- Funciones Lógica UI ---
 
-            async function loadUserNickAndDecideView() { /* ... (igual) ... */ console.log("loadUserNick:", userId); if (!userId || !db || !allDOMElements.loginOverlay) { showNickPrompt(); return; } const ref = db.doc(`users/${userId}`); try { const doc = await ref.get(); if (doc.exists && doc.data().name) { userDisplayName = doc.data().name; showModeSelector(); } else { showNickPrompt(); } } catch (e) { console.error("Err load nick:", e); if (e.code==='permission-denied') { showFatalError("Err perm ('users')."); } else { showNickPrompt(); } } }
+            async function loadUserNickAndDecideView() { /* ... (igual) ... */
+                console.log("loadUserNick:", userId); if (!userId || !db || !allDOMElements.loginOverlay) { console.warn("Prereqs missing loadUserNick. Forcing Nick Prompt."); showNickPrompt(); return; } const ref = db.doc(`users/${userId}`); try { const doc = await ref.get(); if (doc.exists && doc.data().name) { userDisplayName = doc.data().name; showModeSelector(); } else { showNickPrompt(); } } catch (e) { console.error("Err load nick:", e); if (e.code==='permission-denied') { showFatalError("Err perm ('users')."); } else { showNickPrompt(); } }
+            }
             function showNickPrompt() { /* ... (igual) ... */
                 console.log("Showing Nick Prompt."); if (!allDOMElements.loginOverlay || !allDOMElements.modeSelector || !allDOMElements.mainAppContent || !allDOMElements.loginBtn) { showFatalError("Err UI Nick."); return; }
-                Object.values(allDOMElements).forEach(el => { if(el && el.hidden !== undefined && el !== allDOMElements.loginOverlay) el.hidden = true; });
-                allDOMElements.loginOverlay.hidden = false;
+                Object.values(allDOMElements).forEach(el => { if(el && el.hidden !== undefined && el !== allDOMElements.loginOverlay) el.hidden = true; }); allDOMElements.loginOverlay.hidden = false;
                 allDOMElements.loginBtn.removeEventListener('click', handleNickSubmit); allDOMElements.loginBtn.addEventListener('click', handleNickSubmit);
                 allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar';
                 if(allDOMElements.nickInput) allDOMElements.nickInput.value = ''; if(allDOMElements.nickError) allDOMElements.nickError.hidden = true;
+                // No asignar listener de volver aquí, es la primera pantalla
             }
             async function handleNickSubmit() { /* ... (igual) ... */ console.log("handleNickSubmit."); if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return; const nick = allDOMElements.nickInput.value.trim(); if (nick === "") { allDOMElements.nickError.hidden = false; return; } allDOMElements.nickError.hidden = true; userDisplayName = nick; const ref = db.doc(`users/${userId}`); try { allDOMElements.loginBtn.disabled = true; allDOMElements.loginBtn.innerHTML = '<div class="loader"></div> G...'; await ref.set({ name: userDisplayName }, { merge: true }); allDOMElements.loginOverlay.hidden = true; showModeSelector(); } catch (e) { console.error("Err save nick:", e); alert("Error al guardar."); } finally { if (allDOMElements.loginBtn?.parentNode) { allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar'; } } }
 
-            function showModeSelector() { /* ... (igual, pero llama a asignar listeners volver) ... */
+            function showModeSelector() { /* ... (igual, PERO NO llama a asignar listeners volver) ... */
                 console.log("Showing Mode Selector."); if (!allDOMElements.modeSelector) return;
                 Object.values(allDOMElements).forEach(el => { if(el && el.hidden !== undefined && el !== allDOMElements.modeSelector) el.hidden = true; });
                 allDOMElements.modeSelector.hidden = false;
@@ -194,7 +210,7 @@
                 allDOMElements.createActivityBtn.removeEventListener('click', createClassActivity); allDOMElements.createActivityBtn.addEventListener('click', createClassActivity);
                  assignDynamicBackButtonListeners('teacherSetupSection'); // Asignar listener volver AHORA
             }
-            function handleTeacherPdfSelect() { /* ... (igual) ... */ if (allDOMElements.createActivityBtn) allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload.files.length; }
+            function handleTeacherPdfSelect() { /* ... (igual) ... */ if (allDOMElements.createActivityBtn) allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload?.files?.length; } // Añadir ?
 
             function showJoinClassSection() { /* ... (igual, pero llama a asignar listeners volver) ... */
                 console.log("Showing Join Class UI."); if (!allDOMElements.modeSelector || !allDOMElements.classOptions || !allDOMElements.teacherSetupSection || !allDOMElements.joinClassSection || !allDOMElements.activityCodeInput || !allDOMElements.joinActivityBtn) { console.error("Missing elements for showJoinClassSection."); showModeSelector(); return; }
@@ -221,7 +237,6 @@
                  try { const txt=await extractPdfText(file); if(new Blob([txt]).size>950000){throw new Error("PDF>1MB.");} const ref=db.collection('activities').doc(); currentActivityId=ref.id; currentActivityOwnerId=userId; await ref.set({ownerId:userId,ownerName:userDisplayName,createdAt:firebase.firestore.FieldValue.serverTimestamp(),sourceText:txt,fileName:file.name});
                      allDOMElements.teacherSetupSection.hidden=true; allDOMElements.activityCodeDisplay.textContent=currentActivityId; allDOMElements.activityCreatedSection.hidden=false; showStatusMessage(`Creada: ${currentActivityId}`, 'green');
                      const cd=allDOMElements.activityCreatedSection.querySelector('.select-all'); if(cd){cd.onclick=null; cd.addEventListener('click', ()=>copyToClipboard(currentActivityId));}
-                     // Asignar listener reset aquí
                      allDOMElements.resetActivityBtn.removeEventListener('click', confirmResetActivity); allDOMElements.resetActivityBtn.addEventListener('click', confirmResetActivity); allDOMElements.resetActivityBtn.disabled=false;
                      assignDynamicBackButtonListeners('activityCreatedSection'); // Asignar volver AHORA
                   }
