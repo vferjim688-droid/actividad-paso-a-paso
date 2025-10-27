@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Herramienta de Resumen IA (Profesor/Alumno)</title>
+    <title>Herramienta Resumen IA (v. Completa)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,8 +11,10 @@
     <!-- Incluir la librería pdf.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
     <script>
-        // Configurar workerSrc ANTES de cargar Firebase o cualquier otro script que pueda usarlo
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+        // Configurar workerSrc ANTES de cargar Firebase
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+        }
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
@@ -39,7 +41,7 @@
 </head>
 <body class="text-gray-800">
 
-    <!-- ========= HTML de la Aplicación (Sin Cambios) ========= -->
+    <!-- ========= HTML de la Aplicación ========= -->
 
     <!-- Pantalla de Nick -->
     <div id="login-overlay" class="modal-overlay" hidden>
