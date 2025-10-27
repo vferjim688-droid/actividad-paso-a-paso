@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Herramienta de Resumen IA v3</title> <!-- v3 -->
+    <title>Herramienta Resumen IA (v.Estable)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- pdf.js (solo librerías) -->
+    <!-- Incluir la librería pdf.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
     <script>
-        // Configurar workerSrc ANTES de cualquier uso
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+        }
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
@@ -29,12 +30,12 @@
         #api-key-section-content { background-color: #fff; padding: 1.5rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); max-width: 500px; width: 90%; margin: 1rem; }
     </style>
 
-    <!-- Firebase (solo librerías) -->
+    <!-- Cargamos Firebase con el método "clásico" (compat) -->
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
 
-    <!-- NO PONER SCRIPT PRINCIPAL AQUÍ -->
+    <!-- El script principal se ha movido al final del <body> -->
 
 </head>
 <body class="text-gray-800">
@@ -79,7 +80,7 @@
 
     <!-- Sección API Key -->
     <div id="api-key-section" class="modal-overlay" hidden>
-        <div id="api-key-section-content" class="bg-white p-8 rounded-xl shadow-lg max-w-lg w-full mx-4"> <!-- ID cambiado -->
+        <div id="api-key-section-content" class="bg-white p-8 rounded-xl shadow-lg max-w-lg w-full mx-4">
             <h2 class="text-xl font-bold mb-4 text-gray-800">Configurar Clave API de Gemini</h2>
             <p class="text-sm text-gray-600 mb-4">
                 Para usar las funciones de IA, necesitas una Clave API de Google AI Studio.
@@ -89,13 +90,12 @@
             <input id="gemini-api-key-input" type="password" placeholder="Pega tu Clave API aquí..." class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500">
              <div class="flex justify-end gap-3">
                  <button id="back-from-api-key" class="text-sm text-gray-600 hover:underline px-4 py-2">Cancelar</button>
-                 <button id="save-api-key-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                 <button id="save-api-key-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700">
                      Guardar Clave
                  </button>
             </div>
         </div>
     </div>
-
 
     <!-- Sección para Unirse a Clase -->
      <div id="join-class-section" class="container mx-auto p-8 max-w-md text-center" hidden>
@@ -142,7 +142,6 @@
             <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Herramienta de Resumen IA</h1>
              <button class="mt-2 text-sm text-blue-600 hover:underline">[ Cambiar Modo / PDF / Salir ]</button>
         </header>
-
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             <div id="pdf-upload-section" class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg border" hidden>
                 <h2 class="text-xl font-bold mb-4">1. Carga tu PDF</h2>
@@ -159,7 +158,6 @@
             </div>
         </div>
          <p id="file-name" class="text-center text-sm text-gray-600 mb-6">Ningún archivo.</p>
-
         <main id="student-workspace" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div class="bg-white p-6 rounded-2xl shadow-lg border">
                 <div class="flex justify-between items-center mb-4">
@@ -173,7 +171,6 @@
                     <div id="alternative-explanation-display" class="hidden p-4 bg-purple-50 rounded-lg"></div>
                 </div>
             </div>
-
             <div class="bg-white p-6 rounded-2xl shadow-lg border">
                  <h2 class="text-2xl font-bold mb-4 text-gray-800">Tu Resumen</h2>
                  <input id="summary-title-input" type="text" placeholder="Título (opcional)" class="w-full p-2 mb-2 border rounded-lg">
@@ -192,10 +189,11 @@
         </main>
     </div>
 
+
     <!-- ========= SCRIPT PRINCIPAL (MOVIDO AL FINAL) ========= -->
     <script>
-        // --- INICIO SCRIPT PRINCIPAL ---
-        console.log("[Script Start] Attempting initialization...");
+        // --- INICIO SCRIPT ---
+        console.log("[Script Start] Executing script at end of body.");
 
         // --- CONFIG FIREBASE ---
         const firebaseConfig = {
@@ -210,12 +208,13 @@
 
         let app, auth, db, userId, userDisplayName;
         let currentPDFText = ""; let currentActivityId = null; let currentActivityOwnerId = null;
-        let allDOMElements = {}; let firestoreListenerUnsubscribe = null; let isAppInitialized = false;
-        const GEMINI_API_KEY_STORAGE_KEY = 'geminiApiKey_v2';
+        let allDOMElements = {};
+        let firestoreListenerUnsubscribe = null; let isAppInitialized = false;
+        const GEMINI_API_KEY_STORAGE_KEY = 'geminiApiKey_v2'; // Clave única para localStorage
 
         // --- PASO 1: ASIGNAR ELEMENTOS DOM ---
         function assignDOMElements() {
-             console.log("[INIT] Assigning DOM elements...");
+             console.log("[INIT-1] Assigning DOM elements...");
              try {
                  const ids = ['loginOverlay', 'loginBtn', 'nickInput', 'nickError', 'modeSelector', 'individualModeBtn', 'classModeBtn', 'classOptions', 'teacherOptionBtn', 'studentOptionBtn', 'joinClassSection', 'activityCodeInput', 'joinActivityBtn', 'teacherSetupSection', 'teacherPdfUpload', 'createActivityBtn', 'activityCreatedSection', 'activityCodeDisplay', 'resetActivityBtn', 'mainAppContent', 'leaderboardSection', 'leaderboard', 'pdfUploadSection', 'pdfUpload', 'fileNameDisplay', 'sourceTextDisplay', 'textContainer', 'alternativeExplanationBtn', 'studentSummary', 'wordCount', 'geminiEvaluateBtn', 'geminiFeedbackArea', 'downloadBtn', 'summaryTitleInput', 'statusMessage', 'pdfPlaceholder', 'apiKeySection', 'apiKeyInput', 'saveApiKeyBtn', 'showApiKeyBtn', 'backFromApiKeyBtn', 'backFromClassOptions'];
                  let missing = [];
@@ -228,26 +227,26 @@
                  const missingCrucial = crucial.filter(k => !allDOMElements[k]);
                  if (missingCrucial.length > 0) { throw new Error(`Faltan HTML esenciales: ${missingCrucial.join(', ')}.`); }
                  if (missing.length > 0) { console.warn(`Elementos no cruciales faltantes: ${missing.join(', ')}.`); }
-                 console.log("[INIT] DOM assignment successful.");
-                 return true; // Éxito
-             } catch (domError) { console.error("[INIT] Error asignando DOM:", domError); showFatalError(`Error interfaz: ${domError.message}. Revisa HTML.`); return false; }
+                 console.log("[INIT-1] DOM assignment successful.");
+                 return true;
+             } catch (domError) { console.error("[INIT-1] Error asignando DOM:", domError); showFatalError(`Error interfaz: ${domError.message}. Revisa HTML.`); return false; }
         }
 
         // --- PASO 2: INICIALIZAR FIREBASE ---
         function initializeFirebase() {
-            console.log("[INIT] Initializing Firebase...");
+            console.log("[INIT-2] Initializing Firebase...");
             try {
                 if (!firebaseConfig?.apiKey) throw new Error("firebaseConfig missing.");
                 if (!firebase?.apps?.length) { app = firebase.initializeApp(firebaseConfig); } else { app = firebase.app(); }
                 auth = firebase.auth(app); db = firebase.firestore(app);
-                console.log("[INIT] Firebase services OK.");
-                return true; // Éxito
-            } catch (e) { console.error("[INIT] CRITICAL ERROR init Firebase:", e); showFatalError(`Error Firebase: ${e.message}.`); return false; }
+                console.log("[INIT-2] Firebase services OK.");
+                return true;
+            } catch (e) { console.error("[INIT-2] CRITICAL ERROR init Firebase:", e); showFatalError(`Error Firebase: ${e.message}.`); return false; }
         }
 
         // --- PASO 3: CONFIGURAR LISTENER AUTH Y ARRANCAR UI ---
         function setupAuthListenerAndStart() {
-            console.log("[INIT] Setting up Auth listener...");
+            console.log("[INIT-3] Setting up Auth listener...");
             if (!auth) { showFatalError("Auth no disponible."); return; }
             auth.onAuthStateChanged(async (user) => {
                 console.log("[AUTH] State changed. User:", user ? user.uid : 'null');
@@ -256,11 +255,10 @@
                     catch(e) { handleAuthError(e); }
                 } else {
                     userId = user.uid;
-                    if (!isAppInitialized) { // Solo ejecutar la primera vez que tenemos usuario
-                         console.log("[AUTH] User detected. App not yet fully initialized. Loading nick/UI...");
+                    if (!isAppInitialized) {
+                         console.log("[AUTH] User detected. App starting...");
                          isAppInitialized = true;
-                         // Asignar listeners de botones estáticos (volver, API key) AHORA que el DOM está listo
-                         assignStaticAndApiKeyListeners();
+                         assignStaticAndApiKeyListeners(); // Asignar listeners estáticos AHORA
                          await loadUserNickAndDecideView(); // Arrancar flujo UI
                     } else { console.log("[AUTH] User already present / App initialized."); }
                 }
@@ -268,54 +266,45 @@
         }
 
         function assignStaticAndApiKeyListeners() {
-            console.log("[INIT] Assigning static/API listeners...");
-            // API Key Listeners (ya deberían existir por assignDOMElements)
-             allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
-             allDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
-             // Los listeners de 'Volver' se asignarán dinámicamente al mostrar cada sección
+            console.log("[INIT-3.1] Assigning static/API listeners...");
+            allDOMElements.showApiKeyBtn?.addEventListener('click', showApiKeySection);
+            allDOMElements.saveApiKeyBtn?.addEventListener('click', saveApiKey);
         }
-
 
         function handleAuthError(e) { /* ... (igual) ... */ console.error("Auth Error:", e); const cfg = ['auth/configuration-not-found','auth/operation-not-allowed']; if(cfg.includes(e.code)){showFatalError(`<b>Error Config:</b> Auth Anónima no habilitada.`);} else {showFatalError(`Error auth: ${e.message}`);} }
         function showFatalError(message) { /* ... (igual) ... */ console.error("FATAL:", message); try { document.body.innerHTML = `<div class="p-8 text-red-500">${message}</div>`; } catch (e) {} }
 
         // --- Funciones Lógica UI ---
-        // (Las funciones showNickPrompt, handleNickSubmit, showModeSelector, etc., son iguales que antes)
-        // ... (Incluir aquí TODAS las funciones de lógica de UI, Firebase, IA, etc., de la versión anterior y verificada)
-
-        async function loadUserNickAndDecideView() { /* ... (igual que antes) ... */
+        async function loadUserNickAndDecideView() { /* ... (igual) ... */
             console.log("[UI] loadUserNick:", userId); if (!userId || !db || !allDOMElements.loginOverlay) { console.warn("Prereqs missing loadUserNick. Forcing Nick Prompt."); showNickPrompt(); return; } const ref = db.doc(`users/${userId}`); try { const doc = await ref.get(); if (doc.exists && doc.data().name) { userDisplayName = doc.data().name; showModeSelector(); } else { showNickPrompt(); } } catch (e) { console.error("Err load nick:", e); if (e.code==='permission-denied') { showFatalError("Err perm ('users')."); } else { showNickPrompt(); } }
         }
-        function showNickPrompt() { /* ... (igual que antes) ... */
+        function showNickPrompt() { /* ... (igual) ... */
             console.log("[UI] Showing Nick Prompt."); if (!allDOMElements.loginOverlay) { showFatalError("Err UI Nick."); return; }
             hideAllSectionsExcept('loginOverlay'); allDOMElements.loginOverlay.hidden = false;
             allDOMElements.loginBtn?.removeEventListener('click', handleNickSubmit); allDOMElements.loginBtn?.addEventListener('click', handleNickSubmit);
             if(allDOMElements.loginBtn) allDOMElements.loginBtn.disabled = false; if(allDOMElements.loginBtn) allDOMElements.loginBtn.textContent = 'Guardar y Continuar';
             if(allDOMElements.nickInput) allDOMElements.nickInput.value = ''; if(allDOMElements.nickError) allDOMElements.nickError.hidden = true;
         }
-        async function handleNickSubmit() { /* ... (igual que antes) ... */
-             console.log("[UI] handleNickSubmit."); if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return; const nick = allDOMElements.nickInput.value.trim(); if (nick === "") { allDOMElements.nickError.hidden = false; return; } allDOMElements.nickError.hidden = true; userDisplayName = nick; const ref = db.doc(`users/${userId}`); try { allDOMElements.loginBtn.disabled = true; allDOMElements.loginBtn.innerHTML = '<div class="loader"></div> G...'; await ref.set({ name: userDisplayName }, { merge: true }); allDOMElements.loginOverlay.hidden = true; showModeSelector(); } catch (e) { console.error("Err save nick:", e); alert("Error al guardar."); } finally { if (allDOMElements.loginBtn?.parentNode) { allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar'; } }
-        }
-
-        function showModeSelector() { /* ... (igual que antes) ... */
-            console.log("[UI] Showing Mode Selector."); if (!allDOMElements.modeSelector) return;
+        async function handleNickSubmit() { /* ... (igual) ... */ console.log("[UI] handleNickSubmit."); if (!allDOMElements.nickInput || !allDOMElements.nickError || !allDOMElements.loginBtn || !userId || !db) return; const nick = allDOMElements.nickInput.value.trim(); if (nick === "") { allDOMElements.nickError.hidden = false; return; } allDOMElements.nickError.hidden = true; userDisplayName = nick; const ref = db.doc(`users/${userId}`); try { allDOMElements.loginBtn.disabled = true; allDOMElements.loginBtn.innerHTML = '<div class="loader"></div> G...'; await ref.set({ name: userDisplayName }, { merge: true }); allDOMElements.loginOverlay.hidden = true; showModeSelector(); } catch (e) { console.error("Err save nick:", e); alert("Error al guardar."); } finally { if (allDOMElements.loginBtn?.parentNode) { allDOMElements.loginBtn.disabled = false; allDOMElements.loginBtn.textContent = 'Guardar y Continuar'; } } }
+        
+        function showModeSelector() { /* ... (igual) ... */
+            console.log("[UI] Showing Mode Selector."); if (!allDOMElements.modeSelector) { console.error("modeSelector missing!"); return; }
             hideAllSectionsExcept('modeSelector'); allDOMElements.modeSelector.hidden = false;
             allDOMElements.individualModeBtn?.removeEventListener('click', setupIndividualMode); allDOMElements.individualModeBtn?.addEventListener('click', setupIndividualMode);
             allDOMElements.classModeBtn?.removeEventListener('click', showClassOptionsUI); allDOMElements.classModeBtn?.addEventListener('click', showClassOptionsUI);
             if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
             if (firestoreListenerUnsubscribe) { firestoreListenerUnsubscribe(); firestoreListenerUnsubscribe = null; console.log("FS listener stopped."); }
-            // No asignar listeners de volver aquí
         }
-
-        function showClassOptionsUI() { /* ... (igual que antes) ... */
+        
+        function showClassOptionsUI() { /* ... (igual) ... */
             console.log("[UI] Showing Class Options."); if (!allDOMElements.modeSelector || !allDOMElements.classOptions) { showModeSelector(); return; }
             hideAllSectionsExcept('classOptions'); allDOMElements.classOptions.hidden = false;
             allDOMElements.teacherOptionBtn?.removeEventListener('click', setupTeacherMode); allDOMElements.teacherOptionBtn?.addEventListener('click', setupTeacherMode);
             allDOMElements.studentOptionBtn?.removeEventListener('click', showJoinClassSection); allDOMElements.studentOptionBtn?.addEventListener('click', showJoinClassSection);
              assignDynamicBackButtonListeners('classOptions');
         }
-
-        function setupIndividualMode() { /* ... (igual que antes) ... */
+        
+        function setupIndividualMode() { /* ... (igual) ... */
             console.log("[UI] Setting up Individual Mode."); currentActivityId = null; currentActivityOwnerId = null;
             hideAllSectionsExcept('mainAppContent'); allDOMElements.mainAppContent.hidden = false; allDOMElements.pdfUploadSection.hidden = false; allDOMElements.pdfPlaceholder.hidden = true; allDOMElements.leaderboardSection.hidden = true;
             if (allDOMElements.pdfUpload) { const newUP = allDOMElements.pdfUpload.cloneNode(true); allDOMElements.pdfUpload.parentNode.replaceChild(newUP, allDOMElements.pdfUpload); allDOMElements.pdfUpload = newUP; allDOMElements.pdfUpload.addEventListener('change', handlePdfUpload); allDOMElements.pdfUpload.value = ''; }
@@ -324,8 +313,8 @@
             if (allDOMElements.fileNameDisplay) allDOMElements.fileNameDisplay.textContent = 'Ningún archivo.';
              assignDynamicBackButtonListeners('mainAppContent');
         }
-
-        function setupTeacherMode() { /* ... (igual que antes) ... */
+        
+        function setupTeacherMode() { /* ... (igual) ... */
             console.log("[UI] Setting up Teacher Mode."); if (!allDOMElements.teacherSetupSection) { showModeSelector(); return; }
             hideAllSectionsExcept('teacherSetupSection'); allDOMElements.teacherSetupSection.hidden = false;
             allDOMElements.createActivityBtn.disabled = true; allDOMElements.createActivityBtn.textContent = 'Crear Actividad'; allDOMElements.teacherPdfUpload.value = ''; if(allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
@@ -334,8 +323,8 @@
              assignDynamicBackButtonListeners('teacherSetupSection');
         }
         function handleTeacherPdfSelect() { /* ... (igual) ... */ if (allDOMElements.createActivityBtn) allDOMElements.createActivityBtn.disabled = !allDOMElements.teacherPdfUpload?.files?.length; }
-
-        function showJoinClassSection() { /* ... (igual que antes) ... */
+        
+        function showJoinClassSection() { /* ... (igual) ... */
             console.log("[UI] Showing Join Class."); if (!allDOMElements.joinClassSection) { showModeSelector(); return; }
             hideAllSectionsExcept('joinClassSection'); allDOMElements.joinClassSection.hidden = false;
             allDOMElements.activityCodeInput.value = ''; allDOMElements.joinActivityBtn.disabled = false; allDOMElements.joinActivityBtn.textContent = 'Unirme';
@@ -343,27 +332,27 @@
             allDOMElements.joinActivityBtn?.removeEventListener('click', joinClassActivity); allDOMElements.joinActivityBtn?.addEventListener('click', joinClassActivity);
              assignDynamicBackButtonListeners('joinClassSection');
         }
-
-        function showApiKeySection() { /* ... (igual que antes) ... */
+        
+        function showApiKeySection() { /* ... (igual) ... */
             console.log("[UI] Showing API Key Section."); if (!allDOMElements.apiKeySection) return;
             hideAllSectionsExcept('apiKeySection'); allDOMElements.apiKeySection.hidden = false;
             allDOMElements.apiKeyInput.value = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY) || '';
              assignDynamicBackButtonListeners('apiKeySection');
         }
-
-        // Helper para ocultar secciones
-        function hideAllSectionsExcept(sectionIdToShow) {
-             console.log(`[UI] Hiding all except ${sectionIdToShow}`);
-             const sectionIds = ['loginOverlay', 'modeSelector', 'classOptions', 'joinClassSection', 'teacherSetupSection', 'activityCreatedSection', 'mainAppContent', 'apiKeySection'];
-             sectionIds.forEach(id => { if (allDOMElements[id]) allDOMElements[id].hidden = (id !== sectionIdToShow); });
-             if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
+        
+        function hideAllSectionsExcept(sectionIdToShow) { /* ... (igual) ... */
+             console.log(`[UI] Hiding all except ${sectionIdToShow}`); const ids = ['loginOverlay', 'modeSelector', 'classOptions', 'joinClassSection', 'teacherSetupSection', 'activityCreatedSection', 'mainAppContent', 'apiKeySection']; ids.forEach(id => { if (allDOMElements[id]) allDOMElements[id].hidden = (id !== sectionIdToShow); else console.warn(`hideAll: ${id} not found.`); }); if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
+        }
+        
+        function assignDynamicBackButtonListeners(sectionId) { /* ... (igual) ... */
+            console.log(`Assigning back button for section: ${sectionId}`); const sectionElement = allDOMElements[sectionId]; if (!sectionElement) { console.error(`Cannot find section ${sectionId} for back button.`); return; } const backButton = sectionElement.querySelector('button.hover\\:underline'); if (backButton) { if (backButton.textContent.toLowerCase().includes('volver') || backButton.textContent.toLowerCase().includes('cancelar') || backButton.textContent.toLowerCase().includes('salir')) { backButton.removeEventListener('click', showModeSelector); backButton.addEventListener('click', showModeSelector); console.log(`Back listener assigned for ${sectionId}`); } else { console.warn(`Button in ${sectionId} not 'Back':`, backButton.textContent); } } else { console.warn(`Back button not found in ${sectionId}`); } if (sectionId === 'apiKeySection' && allDOMElements.backFromApiKeyBtn) { allDOMElements.backFromApiKeyBtn.removeEventListener('click', showModeSelector); allDOMElements.backFromApiKeyBtn.addEventListener('click', showModeSelector); } if (sectionId === 'classOptions' && allDOMElements.backFromClassOptions) { allDOMElements.backFromClassOptions.removeEventListener('click', showModeSelector); allDOMElements.backFromClassOptions.addEventListener('click', showModeSelector); } if (sectionId === 'mainAppContent') { const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline'); if (mainBackButton) { mainBackButton.onclick = null; mainBackButton.removeEventListener('click', () => location.reload()); mainBackButton.addEventListener('click', () => location.reload()); console.log("Main app back listener assigned."); } }
         }
 
 
         // --- Funciones API Key ---
-        function saveApiKey() { /* ... (igual) ... */ const apiKey = allDOMElements.apiKeyInput.value.trim(); if (apiKey) { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); console.log("API Key saved."); showStatusMessage("Clave guardada.", "green", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } else { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); console.log("API Key removed."); showStatusMessage("Clave eliminada.", "yellow", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } }
+        function saveApiKey() { /* ... (igual) ... */ const apiKey = allDOMElements.apiKeyInput?.value.trim(); if (apiKey) { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); console.log("API Key saved."); showStatusMessage("Clave guardada.", "green", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } else { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); console.log("API Key removed."); showStatusMessage("Clave eliminada.", "yellow", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } }
 
-        // --- Resto ---
+        // --- Resto de funciones (robustas) ---
         async function createClassActivity() { /* ... (igual) ... */
              console.log("Attempting create activity..."); const file=allDOMElements.teacherPdfUpload?.files[0]; if(!file||file.type!=='application/pdf'){alert('Sel. PDF.'); return;}
              allDOMElements.createActivityBtn.disabled=true; allDOMElements.createActivityBtn.innerHTML='<div class="loader"></div> Creando...'; showStatusMessage('Procesando PDF...', 'blue');
@@ -426,181 +415,5 @@
         async function generateAlternativeExplanation() { /* ... (igual) ... */ console.log("generateAlternativeExplanation."); if (!currentPDFText || currentPDFText.trim().length < 10 || !allDOMElements.alternativeExplanationBtn || !allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) { console.warn("Alt Expl prereqs missing."); showStatusMessage("Carga PDF con texto.", "yellow", 3000); if(allDOMElements.alternativeExplanationDisplay) allDOMElements.alternativeExplanationDisplay.classList.add('hidden'); if(allDOMElements.sourceTextDisplay) allDOMElements.sourceTextDisplay.classList.remove('hidden'); return; } const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText; const prompt = `Profesor explica a alumno Bachillerato, sencillo, analogía: "${textSnippet}"`; allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Generando...</h4><div class="loader"></div>`; allDOMElements.alternativeExplanationDisplay.classList.remove('hidden'); allDOMElements.sourceTextDisplay.classList.add('hidden'); const explanation = await callGeminiAPI(prompt, allDOMElements.alternativeExplanationBtn); if (!allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) return; allDOMElements.alternativeExplanationDisplay.innerHTML = `<h4 class="font-bold mb-2">Explicación:</h4><div>${explanation}</div><hr class="my-4"><button id="close-alt-explanation" class="text-sm text-blue-600 hover:underline">Cerrar</button>`; const closeBtn = document.getElementById('close-alt-explanation'); if(closeBtn){ closeBtn.removeEventListener('click', closeAltExplanation); closeBtn.addEventListener('click', closeAltExplanation); } }
         function closeAltExplanation() { /* ... (igual) ... */ if (!allDOMElements.alternativeExplanationDisplay || !allDOMElements.sourceTextDisplay) return; allDOMElements.alternativeExplanationDisplay.classList.add('hidden'); allDOMElements.sourceTextDisplay.classList.remove('hidden'); }
         async function evaluateReasoning() { /* ... (igual) ... */ console.log("evaluateReasoning."); if (!currentPDFText || !allDOMElements.studentSummary?.value.trim() || !allDOMElements.geminiEvaluateBtn || !allDOMElements.geminiFeedbackArea) { console.warn("Eval prereqs missing."); return; } const textSnippet = currentPDFText.length > 4000 ? currentPDFText.substring(0, 4000) + "..." : currentPDFText; const summaryText = allDOMElements.studentSummary.value; const prompt = `Profesor Bachillerato evalúa resumen alumno. Texto: "${textSnippet}". Resumen: "${summaryText}". Evalúa si capta ideas, conecta, feedback constructivo, ánimo, sin nota, saludo cercano.`; allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Generando...</h3><div class="loader"></div>`; allDOMElements.geminiFeedbackArea.hidden = false; const evaluation = await callGeminiAPI(prompt, allDOMElements.geminiEvaluateBtn); if (!allDOMElements.geminiFeedbackArea) return; allDOMElements.geminiFeedbackArea.innerHTML = `<h3 class="text-xl font-bold mb-3 text-green-800">Valoración IA</h3><div class="p-4 bg-green-50 border border-green-200 rounded-lg prose prose-custom text-gray-700">${evaluation}</div>`; }
-        function downloadSummaries() { /* ... (igual) ... */ console.log("downloadSummaries."); if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return; const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF"; if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; } let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${summary}`; try { const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); const sf = title.replace(/[^a-z0-9]/gi, '_').toLowerCase(); const su = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase(); link.download = `resumen_${sf.substring(0,20)}_${su.substring(0,10)}.txt`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href); showStatusMessage("Descargado.", 'green', 3000); if (currentActivityId && userId && db) { db.doc(`activities/${currentActivityId}/progress/${userId}`).set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true }).catch(e => console.error("Err saving summary:", e)); } } catch (e) { console.error("Err download:", e); showStatusMessage(`Error: ${e.message}`, 'red'); } }
-
-        // --- INICIAR LA APLICACIÓN ---
-        // CORREGIDO: Llamar a assignDOMElements PRIMERO desde DOMContentLoaded
-        try {
-            if (assignDOMElements()) { // Si la asignación fue exitosa
-                 initializeApp(); // Inicializar Firebase y listeners
-            }
-            // El error ya se maneja dentro de assignDOMElements si falla
-        } catch(initDomError) {
-             console.error("CRITICAL ERROR during initial DOM assignment:", initDomError);
-             showFatalError(`Error interfaz: ${initDomError.message}. Revisa HTML.`);
-        }
-
-        }); // --- FIN: DOMCONTENTLOADED ---
-    </script>
-</head>
-<body class="text-gray-800">
-
-    <!-- Pantalla de Nick -->
-    <div id="login-overlay" class="modal-overlay" hidden>
-        <div class="bg-white p-10 rounded-2xl shadow-2xl text-center max-w-sm w-full mx-4">
-            <h2 class="text-2xl font-bold mb-4 text-gray-900">Bienvenido/a</h2>
-            <p class="text-gray-600 mb-6">Escribe un "Nick" o tu IDEA para identificarte en la clase.</p>
-            <input id="nick-input" type="text" placeholder="Escribe tu nick aquí..." class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500">
-            <button id="login-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300">
-                Guardar Nick y Continuar
-            </button>
-            <p id="nick-error" class="text-red-500 text-sm mt-3" hidden>Por favor, escribe un nick.</p>
-        </div>
-    </div>
-
-    <!-- Selector de Modo -->
-    <div id="mode-selector" class="container mx-auto p-8 text-center" hidden>
-         <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-6">Herramienta de Resumen IA</h1>
-         <p class="text-gray-600 mb-8">Elige cómo quieres usar la aplicación:</p>
-         <div class="flex flex-col md:flex-row justify-center gap-6">
-             <button id="individual-mode-btn" class="bg-white text-blue-700 font-bold py-4 px-8 rounded-lg shadow-lg border border-blue-200 hover:bg-blue-50 transition transform hover:scale-105">
-                 <span class="text-xl block mb-2">👤</span> Modo Individual <span class="block text-sm font-normal text-gray-500">(Sube tu propio PDF)</span>
-             </button>
-             <button id="class-mode-btn" class="bg-white text-green-700 font-bold py-4 px-8 rounded-lg shadow-lg border border-green-200 hover:bg-green-50 transition transform hover:scale-105">
-                  <span class="text-xl block mb-2">👥</span> Modo Clase <span class="block text-sm font-normal text-gray-500">(Únete o crea una actividad)</span>
-             </button>
-         </div>
-         <!-- Contenedor opciones Profe/Alumno -->
-         <div id="class-options" class="mt-8 flex flex-col md:flex-row justify-center gap-4" hidden>
-             <button id="teacher-option-btn" class="bg-blue-100 text-blue-800 font-semibold py-3 px-6 rounded-lg hover:bg-blue-200">Soy Profesor (Crear Nueva)</button>
-             <button id="student-option-btn" class="bg-green-100 text-green-800 font-semibold py-3 px-6 rounded-lg hover:bg-green-200">Soy Alumno (Unirme con Código)</button>
-             <button id="back-from-class-options" class="mt-4 md:mt-0 text-sm text-gray-600 hover:underline">Volver</button>
-         </div>
-         <!-- Botón para configurar API Key -->
-         <div class="mt-8">
-             <button id="show-api-key-btn" class="text-xs text-gray-500 hover:text-blue-600 hover:underline">[Configurar Clave API Gemini]</button>
-         </div>
-         <p id="status-message" class="mt-6 text-sm" hidden></p>
-    </div>
-
-    <!-- Sección API Key -->
-    <div id="api-key-section" class="modal-overlay" hidden>
-        <div id="api-key-section-content" class="bg-white p-8 rounded-xl shadow-lg max-w-lg w-full mx-4"> <!-- ID del div interno cambiado -->
-            <h2 class="text-xl font-bold mb-4 text-gray-800">Configurar Clave API de Gemini</h2>
-            <p class="text-sm text-gray-600 mb-4">
-                Para usar las funciones de IA, necesitas una Clave API de Google AI Studio.
-                Obtén una gratis en <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-600 hover:underline">aistudio.google.com</a>.
-                La clave se guardará en tu navegador.
-            </p>
-            <input id="gemini-api-key-input" type="password" placeholder="Pega tu Clave API aquí..." class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500">
-             <div class="flex justify-end gap-3">
-                 <button id="back-from-api-key" class="text-sm text-gray-600 hover:underline px-4 py-2">Cancelar</button>
-                 <button id="save-api-key-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300">
-                     Guardar Clave
-                 </button>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- Sección para Unirse a Clase -->
-     <div id="join-class-section" class="container mx-auto p-8 max-w-md text-center" hidden>
-         <h2 class="text-2xl font-bold text-gray-900 mb-4">Unirme a Actividad de Clase</h2>
-         <p class="text-gray-600 mb-6">Introduce el código de la actividad:</p>
-         <input id="activity-code-input" type="text" placeholder="Código de la Actividad" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500">
-         <button id="join-activity-btn" class="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700">
-             Unirme
-         </button>
-          <button class="mt-4 text-sm text-gray-600 hover:underline">Volver</button>
-     </div>
-
-     <!-- Sección para Crear Actividad (Profesor) -->
-     <div id="teacher-setup-section" class="container mx-auto p-8 max-w-md text-center" hidden>
-         <h2 class="text-2xl font-bold text-gray-900 mb-4">Crear Actividad de Clase</h2>
-         <p class="text-gray-600 mb-6">Sube el PDF para la clase:</p>
-         <label for="teacher-pdf-upload" class="w-full cursor-pointer bg-blue-100 text-blue-700 font-semibold py-3 px-6 rounded-lg hover:bg-blue-200 transition flex items-center justify-center mb-4">
-             <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-             Seleccionar PDF
-         </label>
-         <input type="file" id="teacher-pdf-upload" class="hidden" accept=".pdf">
-         <button id="create-activity-btn" disabled class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
-             Crear Actividad
-         </button>
-          <button class="mt-4 text-sm text-gray-600 hover:underline">Volver</button>
-     </div>
-
-     <!-- Sección Actividad Creada (Profesor) -->
-     <div id="activity-created-section" class="container mx-auto p-8 max-w-md text-center" hidden>
-         <h2 class="text-2xl font-bold text-green-600 mb-4">¡Actividad Creada!</h2>
-         <p class="text-gray-700 mb-6">Comparte este código con tus alumnos:</p>
-         <div class="bg-green-100 border border-green-300 text-green-800 text-xl md:text-2xl font-mono p-4 rounded-lg mb-6 break-all select-all cursor-pointer" title="Clic para copiar">
-             <span id="activity-code-display"></span>
-         </div>
-         <button id="reset-activity-btn" class="w-full mb-4 bg-red-600 text-white font-bold py-3 px-6 rounded-lg btn-danger">
-             Resetear Datos Actividad
-         </button>
-         <button class="mt-2 text-sm text-gray-600 hover:underline">Crear otra o Volver</button>
-     </div>
-
-    <!-- CONTENIDO PRINCIPAL DE LA APP -->
-    <div id="main-app-content" class="container mx-auto p-4 md:p-8 max-w-7xl" hidden>
-        <header class="text-center mb-6">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Herramienta de Resumen IA</h1>
-             <button class="mt-2 text-sm text-blue-600 hover:underline">[ Cambiar Modo / PDF / Salir ]</button>
-        </header>
-
-        <!-- Carga PDF y Leaderboard -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-            <div id="pdf-upload-section" class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg border" hidden>
-                <h2 class="text-xl font-bold mb-4">1. Carga tu PDF</h2>
-                <label for="pdf-upload" class="w-full cursor-pointer bg-blue-100 text-blue-700 font-semibold py-3 px-6 rounded-lg hover:bg-blue-200 flex items-center justify-center">
-                    <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                    Seleccionar PDF
-                </label>
-                <input type="file" id="pdf-upload" class="hidden" accept=".pdf">
-            </div>
-            <div id="pdf-placeholder" class="lg:col-span-2" hidden></div>
-            <div id="leaderboard-section" class="bg-white p-6 rounded-2xl shadow-lg border" hidden>
-                 <h2 class="text-xl font-bold mb-2">Compañeros</h2>
-                 <div id="leaderboard" class="space-y-1 max-h-40 overflow-y-auto"><p class="text-gray-500 text-sm">Cargando...</p></div>
-            </div>
-        </div>
-         <p id="file-name" class="text-center text-sm text-gray-600 mb-6">Ningún archivo.</p>
-
-        <main id="student-workspace" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Columna Izquierda: Texto PDF -->
-            <div class="bg-white p-6 rounded-2xl shadow-lg border">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800">Contenido PDF</h2>
-                    <button id="alternative-explanation-btn" disabled class="flex items-center space-x-2 bg-purple-100 text-purple-700 font-semibold py-2 px-4 rounded-lg hover:bg-purple-200 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed">
-                        <span>✨ Explicación Alt.</span>
-                    </button>
-                </div>
-                <div id="source-text-container" class="prose prose-custom text-gray-700 h-96 overflow-y-auto p-4 border rounded-lg bg-gray-50">
-                    <div id="source-text-display">Selecciona modo y carga PDF.</div>
-                    <div id="alternative-explanation-display" class="hidden p-4 bg-purple-50 rounded-lg"></div>
-                </div>
-            </div>
-
-            <!-- Columna Derecha: Resumen y Evaluación -->
-            <div class="bg-white p-6 rounded-2xl shadow-lg border">
-                 <h2 class="text-2xl font-bold mb-4 text-gray-800">Tu Resumen</h2>
-                 <input id="summary-title-input" type="text" placeholder="Título (opcional)" class="w-full p-2 mb-2 border rounded-lg">
-                 <textarea id="student-summary" class="w-full h-64 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Escribe aquí tu resumen..."></textarea>
-                 <div class="flex flex-wrap items-center justify-between mt-4 gap-4">
-                     <div class="flex items-center gap-2 flex-wrap">
-                        <button id="gemini-evaluate-btn" disabled class="flex items-center space-x-2 bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 disabled:bg-gray-400">
-                            <span>✨ Evaluar</span></button>
-                        <button id="download-btn" disabled class="flex items-center space-x-2 bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 disabled:bg-gray-400">
-                            <span>📥 Descargar</span></button>
-                     </div>
-                     <div class="text-sm text-gray-600 font-medium">Palabras: <span id="word-count">0</span></div>
-                 </div>
-                 <div id="gemini-feedback-area" class="mt-6" hidden></div>
-            </div>
-        </main>
-    </div>
-
-</body>
-</html>
+        function downloadSummaries() { /* ... (igual) ... */ console.log("downloadSummaries."); if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return; const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF"; if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; } let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${
 
