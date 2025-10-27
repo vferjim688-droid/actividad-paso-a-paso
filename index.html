@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Herramienta Resumen IA (v. Estable)</title>
+    <title>Herramienta de Resumen IA (Profesor/Alumno)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,9 +11,8 @@
     <!-- Incluir la librería pdf.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
     <script>
-        if (typeof pdfjsLib !== 'undefined') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
-        }
+        // Configurar workerSrc ANTES de cargar Firebase o cualquier otro script que pueda usarlo
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
@@ -40,7 +39,7 @@
 </head>
 <body class="text-gray-800">
 
-    <!-- ========= HTML de la Aplicación ========= -->
+    <!-- ========= HTML de la Aplicación (Sin Cambios) ========= -->
 
     <!-- Pantalla de Nick -->
     <div id="login-overlay" class="modal-overlay" hidden>
@@ -420,8 +419,11 @@
         // CORREGIDO: Ejecutar secuencia DENTRO de un try/catch global
         // El script se ejecuta al final del body, por lo que el DOM *debería* estar listo.
         try {
+            // 1. Asignar elementos DOM inmediatamente
             if (assignDOMElements()) {
+                 // 2. Si la asignación del DOM fue exitosa, inicializar Firebase
                  if (initializeFirebase()) {
+                     // 3. Si Firebase OK, configurar el listener de autenticación
                      setupAuthListenerAndStart();
                  }
             }
