@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Herramienta Resumen IA v8 (Corregida)</title> <!-- v8 -->
+    <title>Herramienta Resumen IA (v. Estable)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40,7 +40,7 @@
 </head>
 <body class="text-gray-800">
 
-    <!-- ========= HTML de la Aplicación (Sin Cambios) ========= -->
+    <!-- ========= HTML de la Aplicación ========= -->
 
     <!-- Pantalla de Nick -->
     <div id="login-overlay" class="modal-overlay" hidden>
@@ -192,7 +192,7 @@
 
     <!-- ========= SCRIPT PRINCIPAL (MOVIDO AL FINAL) ========= -->
     <script>
-        // CORREGIDO: Script movido al final del body, no necesita DOMContentLoaded
+        // CORREGIDO: Script movido al final del body
         console.log("[Script Start] Executing script at end of body.");
 
         // --- CONFIG FIREBASE ---
@@ -344,6 +344,10 @@
              console.log(`[UI] Hiding all except ${sectionIdToShow}`); const ids = ['loginOverlay', 'modeSelector', 'classOptions', 'joinClassSection', 'teacherSetupSection', 'activityCreatedSection', 'mainAppContent', 'apiKeySection']; ids.forEach(id => { if (allDOMElements[id]) allDOMElements[id].hidden = (id !== sectionIdToShow); else console.warn(`hideAll: ${id} not found.`); }); if (allDOMElements.statusMessage) allDOMElements.statusMessage.hidden = true;
         }
         
+        function assignDynamicBackButtonListeners(sectionId) { /* ... (igual) ... */
+            console.log(`Assigning back button for section: ${sectionId}`); const sectionElement = allDOMElements[sectionId]; if (!sectionElement) { console.error(`Cannot find section ${sectionId} for back button.`); return; } const backButton = sectionElement.querySelector('button.hover\\:underline'); if (backButton) { if (backButton.textContent.toLowerCase().includes('volver') || backButton.textContent.toLowerCase().includes('cancelar') || backButton.textContent.toLowerCase().includes('salir')) { backButton.removeEventListener('click', showModeSelector); backButton.addEventListener('click', showModeSelector); console.log(`Back listener assigned for ${sectionId}`); } else { console.warn(`Button in ${sectionId} not 'Back':`, backButton.textContent); } } else { console.warn(`Back button not found in ${sectionId}`); } if (sectionId === 'apiKeySection' && allDOMElements.backFromApiKeyBtn) { allDOMElements.backFromApiKeyBtn.removeEventListener('click', showModeSelector); allDOMElements.backFromApiKeyBtn.addEventListener('click', showModeSelector); } if (sectionId === 'classOptions' && allDOMElements.backFromClassOptions) { allDOMElements.backFromClassOptions.removeEventListener('click', showModeSelector); allDOMElements.backFromClassOptions.addEventListener('click', showModeSelector); } if (sectionId === 'mainAppContent') { const mainBackButton = document.querySelector('#main-app-content button.hover\\:underline'); if (mainBackButton) { mainBackButton.onclick = null; mainBackButton.removeEventListener('click', () => location.reload()); mainBackButton.addEventListener('click', () => location.reload()); console.log("Main app back listener assigned."); } }
+        }
+
         // --- Funciones API Key ---
         function saveApiKey() { /* ... (igual) ... */ const apiKey = allDOMElements.apiKeyInput?.value.trim(); if (apiKey) { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); console.log("API Key saved."); showStatusMessage("Clave guardada.", "green", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } else { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); console.log("API Key removed."); showStatusMessage("Clave eliminada.", "yellow", 3000); allDOMElements.apiKeySection.hidden = true; showModeSelector(); } }
 
@@ -413,8 +417,8 @@
         function downloadSummaries() { /* ... (igual) ... */ console.log("downloadSummaries."); if (!allDOMElements.studentSummary || !allDOMElements.summaryTitleInput || !allDOMElements.statusMessage) return; const summary = allDOMElements.studentSummary.value.trim(); const title = allDOMElements.summaryTitleInput.value.trim() || "Resumen PDF"; if (summary === "") { showStatusMessage("No hay resumen.", 'yellow', 3000); return; } let fileContent = `Resumen de: ${title}\nPor: ${userDisplayName || 'Usuario'}\n\n===\n${summary}`; try { const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); const sf = title.replace(/[^a-z0-9]/gi, '_').toLowerCase(); const su = (userDisplayName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase(); link.download = `resumen_${sf.substring(0,20)}_${su.substring(0,10)}.txt`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href); showStatusMessage("Descargado.", 'green', 3000); if (currentActivityId && userId && db) { db.doc(`activities/${currentActivityId}/progress/${userId}`).set({ summary: summary, summaryTitle: title !== "Resumen PDF" ? title : null }, { merge: true }).catch(e => console.error("Err saving summary:", e)); } } catch (e) { console.error("Err download:", e); showStatusMessage(`Error: ${e.message}`, 'red'); } }
 
         // --- INICIAR LA APLICACIÓN ---
-        // CORREGIDO: Llamar a assignDOMElements PRIMERO, luego initializeFirebase
-        // Esto se ejecuta al final del script, después de que todo el HTML ha sido analizado.
+        // CORREGIDO: Ejecutar secuencia DENTRO de un try/catch global
+        // El script se ejecuta al final del body, por lo que el DOM *debería* estar listo.
         try {
             if (assignDOMElements()) {
                  if (initializeFirebase()) {
